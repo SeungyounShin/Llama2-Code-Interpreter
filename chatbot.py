@@ -1,13 +1,21 @@
+import os
+current_file_path = os.path.abspath(__file__)
+project_root_path = os.path.join(current_file_path, '..')
+project_root_path = os.path.abspath(project_root_path)
+os.environ["LLAMA_CI_PATH"] = current_file_path
+
 import gradio as gr
 import random
 import time
 import argparse
 
 from code_interpreter.LlamaCodeInterpreter import LlamaCodeInterpreter
-from code_interpreter.GPTCodeInterpreter import GPTCodeInterpreter
+# from code_interpreter.GPTCodeInterpreter import GPTCodeInterpreter
 from utils.const import *
 
 LLAMA2_MODEL_PATH = "./ckpt/llama-2-13b-chat"
+
+
 
 def load_model(model_path):
     print('++ Loading Model')

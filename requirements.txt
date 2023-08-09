@@ -7,3 +7,7 @@ retrying
 termcolor
 nbformat== 5.8.0
 nbconvert==7.7.1
+
+rich
+accelerate
+bitsandbytes
