@@ -3,16 +3,18 @@ from typing import List, Literal, Optional, Tuple, TypedDict
 
 Role = Literal["system", "user", "assistant"]
 
+
 class Message(TypedDict):
     role: Role
     content: str
+
 
 Dialog = List[Message]
 
 model_path = "./ckpt/llama-2-13b-chat"
 
-B_INST , E_INST = "[INST]", "[/INST]"
-B_SYS  , E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
+B_INST, E_INST = "[INST]", "[/INST]"
+B_SYS, E_SYS = "<<SYS>>\n", "\n<</SYS>>\n\n"
 DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "<s>"
