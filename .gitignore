@@ -1,0 +1,23 @@
+# Ignore .ckpt files
+ckpt
+
+# Ignore Python compiled files
+__pycache__/
+*.py[cod]
+
+# Ignore Python virtual environment
+venv/
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore .DS_Store on MacOS
+.DS_Store
+
+rilab_key.txt
+gpt4_custom_code_interpreter/rilab_key.txt
+openai_api_key.txt
+
+gpt4_custom_code_interpreter/
+tmp/
+gpt_data_gen/
