@@ -12,6 +12,7 @@ from torch.utils.data import Dataset
 from transformers import Trainer
 
 sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from utils.special_tok_llama2 import (
     B_CODE,
     E_CODE,
@@ -46,13 +47,37 @@ class DataArguments:
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
-    optim: str = field(default="adamw_torch")
+    optim: str = field(default="adamw_torch_fused")
     model_max_length: int = field(
         default=512,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
     )
+
+
+def create_peft_config(model):
+    from peft import (
+        get_peft_model,
+        LoraConfig,
+        TaskType,
+        prepare_model_for_int8_training,
+    )
+
+    peft_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        inference_mode=False,
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.05,
+        target_modules=["q_proj", "v_proj"],
+    )
+
+    # prepare int-8 model for training
+    model = prepare_model_for_int8_training(model)
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
+    return model, peft_config
 
 
 def _tokenize_fn(
@@ -129,6 +154,10 @@ def preprocess(
             user_start_inds, assistant_start_inds
         ):
             label[user_start_ind:assistant_start_ind] = IGNORE_INDEX
+
+    # cut max length
+    input_ids = [i[:4096] for i in input_ids]
+    labels = [i[:4096] for i in labels]
 
     return dict(input_ids=input_ids, labels=labels)
 
@@ -231,8 +260,9 @@ def build_model_from_hf_path(hf_model_path: str = "./ckpt/llama-2-13b-chat"):
 
     # build model
     model = LlamaForCausalLM.from_pretrained(
-        hf_model_path, device_map="auto", torch_dtype=torch.float16
+        hf_model_path, load_in_8bit=True, device_map="auto", torch_dtype=torch.float16
     )
+
     model.resize_token_embeddings(len(tokenizer))
 
     return {"tokenizer": tokenizer, "model": model}
@@ -249,13 +279,21 @@ def train():
     model = model_dict["model"]
     tokenizer = model_dict["tokenizer"]
 
+    # peft
+    # create peft config
+    model.train()
+    model, lora_config = create_peft_config(model)
+
+    # make dataset
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
-    # trainer = Trainer(
-    #    model=model, tokenizer=tokenizer, args=training_args, **data_module
-    # )
-    # trainer.train()
-    # trainer.save_state()
-    # trainer.save_model(output_dir=training_args.output_dir)
+    trainer = Trainer(
+        model=model, tokenizer=tokenizer, args=training_args, **data_module
+    )
+
+    # train
+    trainer.train()
+    trainer.save_state()
+    trainer.save_model(output_dir=training_args.output_dir)
 
 
 if __name__ == "__main__":
