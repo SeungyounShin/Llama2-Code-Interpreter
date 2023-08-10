@@ -71,7 +71,7 @@ Please note that this setting is only valid for the current shell session. If yo
 To start interacting with Llama2 via the Gradio UI:
 
 ```bash
-python3 chatbot.py --mode_path <your-model-path>
+python3 chatbot.py --model_path <your-model-path>
 ```
 
 Replace `<your-model-path>` with the path to the model file you want to use. (Usally I recommend you to use chat-type model e.g. `meta-llama/Llama-2-13b-chat`)
