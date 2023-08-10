@@ -35,6 +35,7 @@ from conversation_template import json_to_code_result_tok_temp
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="./ckpt/llama-2-13b-chat")
+    peft: bool = field(default=False)
 
 
 @dataclass
@@ -47,9 +48,9 @@ class DataArguments:
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     cache_dir: Optional[str] = field(default=None)
-    optim: str = field(default="adamw_torch_fused")
+    optim: str = field(default="adamw_torch")
     model_max_length: int = field(
-        default=512,
+        default=4096,
         metadata={
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
@@ -77,6 +78,7 @@ def create_peft_config(model):
     model = prepare_model_for_int8_training(model)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
+    print(f"Using Peft")
     return model, peft_config
 
 
@@ -142,22 +144,27 @@ def preprocess(
     labels = copy.deepcopy(input_ids)
 
     # IGNORE User Question
-    for label in labels:
+    for i, label in enumerate(labels):
         user_start_inds = find_all_sublist_start(label, user_start_seq)
         assistant_start_inds = find_all_sublist_end(label, assistant_start_seq)
 
+        # for debug
+        # for ind in label:
+        #    print(f"{ind} -> {tokenizer.decode(ind)}")
+
         assert len(user_start_inds) == len(
             assistant_start_inds
-        ), "User and Assistant pair should be equal"
+        ), f"User and Assistant pair should be equal :: \n\tUser [{user_start_inds}]/\n\tAssistant [{assistant_start_inds}]\n\n Text : \n{trajs[i]}"
 
         for user_start_ind, assistant_start_ind in zip(
             user_start_inds, assistant_start_inds
         ):
+            print(tokenizer.decode(label[user_start_ind:assistant_start_ind]))
             label[user_start_ind:assistant_start_ind] = IGNORE_INDEX
 
     # cut max length
-    input_ids = [i[:4096] for i in input_ids]
-    labels = [i[:4096] for i in labels]
+    input_ids = [i[: 1024 + 512] for i in input_ids]
+    labels = [i[: 1024 + 512] for i in labels]
 
     return dict(input_ids=input_ids, labels=labels)
 
@@ -224,7 +231,9 @@ def make_supervised_data_module(
     )
 
 
-def build_model_from_hf_path(hf_model_path: str = "./ckpt/llama-2-13b-chat"):
+def build_model_from_hf_path(
+    hf_model_path: str = "./ckpt/llama-2-13b-chat", peft: bool = False
+):
     # build tokenizer
     tokenizer = LlamaTokenizer.from_pretrained(
         hf_model_path,
@@ -259,9 +268,15 @@ def build_model_from_hf_path(hf_model_path: str = "./ckpt/llama-2-13b-chat"):
     )
 
     # build model
-    model = LlamaForCausalLM.from_pretrained(
-        hf_model_path, load_in_8bit=True, device_map="auto", torch_dtype=torch.float16
-    )
+    if peft:
+        model = LlamaForCausalLM.from_pretrained(
+            hf_model_path,
+            load_in_8bit=True,
+            device_map="auto",
+            torch_dtype=torch.float16,
+        )
+    else:
+        model = LlamaForCausalLM.from_pretrained(hf_model_path)
 
     model.resize_token_embeddings(len(tokenizer))
 
@@ -274,15 +289,15 @@ def train():
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    model_dict = build_model_from_hf_path(model_args.model_name_or_path)
+    model_dict = build_model_from_hf_path(
+        hf_model_path=model_args.model_name_or_path, peft=model_args.peft
+    )
 
-    model = model_dict["model"]
-    tokenizer = model_dict["tokenizer"]
-
-    # peft
-    # create peft config
+    model, tokenizer = model_dict["model"], model_dict["tokenizer"]
+    # peft setting
     model.train()
-    model, lora_config = create_peft_config(model)
+    if model_args.peft:
+        model, lora_config = create_peft_config(model)
 
     # make dataset
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
