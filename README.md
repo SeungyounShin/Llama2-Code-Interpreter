@@ -11,8 +11,9 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 ## 🌟 Key Features
 
-- [x] 🚀 **Generation and Execution of Code** : Tailor-made codes spun into existence and executed smoothly. 
-- [ ] 🌟 I'm currently focused on "Developing data for GPT-4 code interpretation"  and "Refining the model using this data" . You can find more on this in the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) of our repository. 
+- [x] 🚀 **Code Generation and Execution**: Llama2 is capable of generating code, which it then automatically identifies and executes within its generated code blocks.
+- [x] Monitors and retains Python variables that were used in previously executed code blocks.
+- [ ] 🌟 At the moment, my focus is on "Data development for GPT-4 code interpretation" and "Enhancing the model using this data". For more details, check out the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) in our repository.
 
 ## Examples
 
