@@ -11,7 +11,7 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 ## 🌟 Key Features
 
-- [x] Mercury 🚀 **Generation and Execution of Code** : Tailor-made codes spun into existence and executed smoothly. 
+- [x] 🚀 **Generation and Execution of Code** : Tailor-made codes spun into existence and executed smoothly. 
 - [ ] 🌟 I'm currently focused on "Developing data for GPT-4 code interpretation"  and "Refining the model using this data" . You can find more on this in the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) of our repository. 
 
 ## Examples
