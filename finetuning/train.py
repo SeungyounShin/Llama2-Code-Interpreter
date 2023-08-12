@@ -149,8 +149,8 @@ def preprocess(
         assistant_start_inds = find_all_sublist_end(label, assistant_start_seq)
 
         # for debug
-        # for ind in label:
-        #    print(f"{ind} -> {tokenizer.decode(ind)}")
+        # for len_i, ind in enumerate(label):
+        #    print(f'{len_i}|{ind} -> "{tokenizer.decode(ind)}"')
 
         assert len(user_start_inds) == len(
             assistant_start_inds
@@ -159,12 +159,12 @@ def preprocess(
         for user_start_ind, assistant_start_ind in zip(
             user_start_inds, assistant_start_inds
         ):
-            print(tokenizer.decode(label[user_start_ind:assistant_start_ind]))
+            # print(tokenizer.decode(label[user_start_ind:assistant_start_ind]))
             label[user_start_ind:assistant_start_ind] = IGNORE_INDEX
 
     # cut max length
-    input_ids = [i[: 1024 + 512] for i in input_ids]
-    labels = [i[: 1024 + 512] for i in labels]
+    input_ids = [i[: 1024 + 356] for i in input_ids]
+    labels = [i[: 1024 + 356] for i in labels]
 
     return dict(input_ids=input_ids, labels=labels)
 

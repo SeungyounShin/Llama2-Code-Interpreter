@@ -42,13 +42,13 @@ def msg_to_code_result_tok_temp(msg: List[Dict]) -> str:
             # Replace the code block start and end markers using regex
             code_pattern = re.compile(r"```python\n(.*?)```", re.DOTALL)
             chat["content"] = code_pattern.sub(
-                r"[CODE_START_TOK]\n\1[/CODE_END_TOK]", chat["content"]
+                r"[CODE_START_TOK]\n\1\n[/CODE_END_TOK]\n", chat["content"]
             )
 
             # Replace the result block start and end markers using regex
             result_pattern = re.compile(r"```RESULTS?\n(.*?)```", re.DOTALL)
             chat["content"] = result_pattern.sub(
-                r"[RESULT_TOK]\n\1[/RESULT_TOK]", chat["content"]
+                r"[RESULT_TOK]\n\1\n[/RESULT_TOK]\n", chat["content"]
             )
 
             full_str += f"\n###Assistant : {chat['content']}\n{E_INST}\n"

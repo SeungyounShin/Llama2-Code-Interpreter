@@ -6,10 +6,16 @@ import copy
 
 import torch
 import transformers
-from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import LlamaForCausalLM, LlamaTokenizer, TextStreamer
 
 from torch.utils.data import Dataset
 from transformers import Trainer
+
+import torch
+from rich.console import Console
+from rich.table import Table
+from datetime import datetime
+from threading import Thread
 
 sys.path.append(os.path.dirname(__file__))
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
@@ -33,6 +39,13 @@ from finetuning.conversation_template import (
     json_to_code_result_tok_temp,
     msg_to_code_result_tok_temp,
 )
+
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="transformers")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+console = Console()  # for pretty print
 
 
 @dataclass
@@ -73,13 +86,18 @@ def build_model_from_hf_path(
     load_peft: Optional[bool] = False,
     peft_model_path: Optional[str] = None,
 ):
+    start_time = datetime.now()
+
     # build tokenizer
+    console.log("[bold cyan]Building tokenizer...[/bold cyan]")
     tokenizer = LlamaTokenizer.from_pretrained(
         hf_base_model_path,
         padding_side="right",
         use_fast=False,
     )
 
+    # Handle special tokens
+    console.log("[bold cyan]Handling special tokens...[/bold cyan]")
     special_tokens_dict = dict()
     if tokenizer.pad_token is None:
         special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN  # 32000
@@ -91,27 +109,17 @@ def build_model_from_hf_path(
         special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
 
     tokenizer.add_special_tokens(special_tokens_dict)
-
     tokenizer.add_tokens(
-        [
-            B_CODE,  # 32001
-            E_CODE,  # 32002
-            B_RESULT,  # 32003
-            E_RESULT,  # 32004
-            B_INST,
-            E_INST,
-            B_SYS,
-            E_SYS,  # 32008
-        ],
+        [B_CODE, B_RESULT, E_RESULT, B_INST, E_INST, B_SYS, E_SYS],
         special_tokens=True,
     )
 
     # build model
+    console.log("[bold cyan]Building model...[/bold cyan]")
     model = LlamaForCausalLM.from_pretrained(
         hf_base_model_path,
-        load_in_8bit=True,
+        load_in_4bit=True,
         device_map="auto",
-        torch_dtype=torch.float16,
     )
 
     model.resize_token_embeddings(len(tokenizer))
@@ -120,22 +128,32 @@ def build_model_from_hf_path(
         from peft import PeftModel
 
         model = PeftModel.from_pretrained(model, peft_model_path)
-        print(f"Peft Model Loaded")
+        console.log("[bold green]Peft Model Loaded[/bold green]")
 
+    end_time = datetime.now()
+    elapsed_time = end_time - start_time
+
+    # Log time performance
+    table = Table(title="Time Performance")
+    table.add_column("Task", style="cyan")
+    table.add_column("Time Taken", justify="right")
+    table.add_row("Loading model", str(elapsed_time))
+    console.print(table)
+
+    console.log("[bold green]Model Loaded[/bold green]")
     return {"tokenizer": tokenizer, "model": model}
 
 
 @torch.inference_mode()
 def inference(
-    user_input="What is 55th fibonacci?",
+    user_input="What is 100th fibo num?",
     max_new_tokens=512,
     do_sample: bool = True,
     use_cache: bool = True,
     top_p: float = 1.0,
-    temperature: float = 1.0,
+    temperature: float = 0.1,
     top_k: int = 50,
     repetition_penalty: float = 1.0,
-    VERBOSE: bool = True,
 ):
     parser = transformers.HfArgumentParser(ModelArguments)
     model_args = parser.parse_args_into_dataclasses()[0]
@@ -149,21 +167,27 @@ def inference(
     model = model_dict["model"]
     tokenizer = model_dict["tokenizer"]
 
+    streamer = TextStreamer(tokenizer, skip_prompt=True)
+
     # peft
     # create peft config
     model.eval()
 
-    user_input = msg_to_code_result_tok_temp(
+    user_prompt = msg_to_code_result_tok_temp(
         [{"role": "user", "content": f"{user_input}"}]
     )
-    prompt = f"{user_input}\n### Assistant :"
+    # Printing user's content in blue
+    console.print("\n" + "-" * 20, style="#808080")
+    console.print(f"###User : {user_input}\n", style="blue")
+
+    prompt = f"{user_prompt}\n###Assistant :"
     # prompt = f"{user_input}\n### Assistant : Here is python code to get the 55th fibonacci number {B_CODE}\n"
 
-    batch = tokenizer(prompt, return_tensors="pt")
-    batch = {k: v.to("cuda") for k, v in batch.items()}
+    inputs = tokenizer([prompt], return_tensors="pt")
 
-    outputs = model.generate(
-        **batch,
+    generated_text = model.generate(
+        **inputs,
+        streamer=streamer,
         max_new_tokens=max_new_tokens,
         do_sample=do_sample,
         top_p=top_p,
@@ -173,13 +197,8 @@ def inference(
         repetition_penalty=repetition_penalty,
     )
 
-    generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=False)[0]
-
-    if VERBOSE:
-        print(generated_text)
-
-    return outputs
+    return generated_text
 
 
 if __name__ == "__main__":
-    inference()
+    inference(user_input="what is sin(44)?")
