@@ -10,43 +10,66 @@ from utils.const import *
 
 from typing import List, Literal, Optional, Tuple, TypedDict, Dict
 from colorama import init, Fore, Style
+import copy
+import re
 
 import torch
 import transformers
 from transformers import LlamaForCausalLM, LlamaTokenizer
 
+sys.path.append(os.path.dirname(__file__))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from finetuning.conversation_template import msg_to_code_result_tok_temp
+from utils.special_tok_llama2 import (
+    B_CODE,
+    E_CODE,
+    B_RESULT,
+    E_RESULT,
+    B_INST,
+    E_INST,
+    B_SYS,
+    E_SYS,
+    DEFAULT_PAD_TOKEN,
+    DEFAULT_BOS_TOKEN,
+    DEFAULT_EOS_TOKEN,
+    DEFAULT_UNK_TOKEN,
+    IGNORE_INDEX,
+)
 
-def smart_tokenizer_and_embedding_resize(
-    special_tokens_dict: Dict,
-    tokenizer: transformers.PreTrainedTokenizer,
-    model: transformers.PreTrainedModel,
-):
-    """Resize tokenizer and embedding.
+import warnings
 
-    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
-    """
-    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
-    model.resize_token_embeddings(len(tokenizer))
-
-    if num_new_tokens > 0:
-        input_embeddings = model.get_input_embeddings().weight.data
-        output_embeddings = model.get_output_embeddings().weight.data
-
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
-            dim=0, keepdim=True
-        )
-
-        input_embeddings[-num_new_tokens:] = input_embeddings_avg
-        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+warnings.filterwarnings("ignore", category=UserWarning, module="transformers")
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 
 class LlamaCodeInterpreter(BaseCodeInterpreter):
     def __init__(
         self, model_path: str, load_in_8bit: bool = False, load_in_4bit: bool = False
     ):
+        # build tokenizer
+        self.tokenizer = LlamaTokenizer.from_pretrained(
+            model_path,
+            padding_side="right",
+            use_fast=False,
+        )
+
+        # Handle special tokens
+        special_tokens_dict = dict()
+        if self.tokenizer.pad_token is None:
+            special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN  # 32000
+        if self.tokenizer.eos_token is None:
+            special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN  # 2
+        if self.tokenizer.bos_token is None:
+            special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN  # 1
+        if self.tokenizer.unk_token is None:
+            special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
+
+        self.tokenizer.add_special_tokens(special_tokens_dict)
+        self.tokenizer.add_tokens(
+            [B_CODE, E_CODE, B_RESULT, E_RESULT, B_INST, E_INST, B_SYS, E_SYS],
+            special_tokens=True,
+        )
+
         self.model = LlamaForCausalLM.from_pretrained(
             model_path,
             device_map="auto",
@@ -54,24 +77,9 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
             load_in_8bit=load_in_8bit,
             torch_dtype=torch.float16,
         )
-        self.tokenizer = LlamaTokenizer.from_pretrained(model_path)
 
-        # Add special token
-        special_tokens_dict = dict()
-        if self.tokenizer.pad_token is None:
-            special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
-        if self.tokenizer.eos_token is None:
-            special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN
-        if self.tokenizer.bos_token is None:
-            special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN
-        if self.tokenizer.unk_token is None:
-            special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
-
-        smart_tokenizer_and_embedding_resize(
-            special_tokens_dict=special_tokens_dict,
-            tokenizer=self.tokenizer,
-            model=self.model,
-        )
+        self.model.resize_token_embeddings(len(self.tokenizer))
+        self.model = self.model.eval()
 
         self.dialog = [
             {
@@ -83,164 +91,143 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
         ]
 
         self.nb = JupyterNotebook()
+        self.MAX_CODE_OUTPUT_LENGTH = 3000
+        out = self.nb.add_and_run(TOOLS_CODE)  # tool import
 
-    def dialog_to_prompt(
-        self, dialog: List[Dialog], SYS_PROMPT: str = ""
-    ) -> torch.Tensor:
-        """
-        code borrowed from : https://github.com/facebookresearch/llama/blob/main/llama/generation.py
-        """
-        if dialog[0]["role"] != "system":
-            dialog = [
-                {
-                    "role": "system",
-                    "content": SYS_PROMPT,
-                }
-            ] + dialog
-        dialog = [
-            {
-                "role": dialog[1]["role"],
-                "content": B_SYS + dialog[0]["content"] + E_SYS + dialog[1]["content"],
-            }
-        ] + dialog[2:]
+    def dialog_to_prompt(self, dialog: List[Dict]) -> str:
+        full_str = msg_to_code_result_tok_temp(dialog)
 
-        assert all([msg["role"] == "user" for msg in dialog[::2]]) and all(
-            [msg["role"] == "assistant" for msg in dialog[1::2]]
-        ), (
-            "model only supports 'system', 'user' and 'assistant' roles, "
-            "starting with 'system', then 'user' and alternating (u/a/u/a/u...)"
-        )
+        return full_str
 
-        # print(dialog[::2], dialog[1::2],)
+    @torch.inference_mode()
+    def generate(
+        self,
+        prompt: str = "[INST]\n###User : hi\n###Assistant :",
+        max_new_tokens=512,
+        do_sample: bool = True,
+        use_cache: bool = True,
+        top_p: float = 1.0,
+        temperature: float = 0.1,
+        top_k: int = 50,
+        repetition_penalty: float = 1.0,
+    ) -> str:
+        # Get the model and tokenizer, and tokenize the user text.
 
-        dialog_tokens: List[int] = sum(
-            [
-                self.tokenizer.encode(
-                    f"{B_INST} {(prompt['content']).strip()} {E_INST} {(answer['content']).strip()} ",
-                )
-                for prompt, answer in zip(
-                    dialog[::2],
-                    dialog[1::2],
-                )
-            ],
-            [],
-        )
-        # assert (
-        #    dialog[-1]["role"] == "user"
-        # ), f"Last message must be from user, got {dialog[-1]['role']}"
-        dialog_tokens += self.tokenizer.encode(
-            f"{B_INST} {(dialog[-1]['content']).strip()} {E_INST}",
-        )
+        input_prompt = copy.deepcopy(prompt)
+        inputs = self.tokenizer([prompt], return_tensors="pt")
+        input_tokens_shape = inputs["input_ids"].shape[-1]
 
-        return torch.tensor(dialog_tokens).unsqueeze(0)
+        eos_token_id = self.tokenizer.convert_tokens_to_ids(DEFAULT_EOS_TOKEN)
+        e_code_token_id = self.tokenizer.convert_tokens_to_ids(E_CODE)
 
-    def hard_coded_eos_splitter(self):
-        self.dialog[-1]["content"] = self.dialog[-1]["content"].split(
-            DEFAULT_EOS_TOKEN
+        output = self.model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            top_p=top_p,
+            temperature=temperature,
+            use_cache=use_cache,
+            top_k=top_k,
+            repetition_penalty=repetition_penalty,
+            eos_token_id=[
+                eos_token_id,
+                e_code_token_id,
+            ],  # Stop generation at either EOS or E_CODE token
         )[0]
+
+        generated_tokens = output[input_tokens_shape:]
+        generated_text = self.tokenizer.decode(generated_tokens)
+
+        return generated_text
+
+    def extract_code_blocks(self, prompt: str) -> Tuple[bool, str]:
+        pattern = re.escape(B_CODE) + r"(.*?)" + re.escape(E_CODE)
+        matches = re.findall(pattern, prompt, re.DOTALL)
+
+        if matches:
+            # Return the last matched code block
+            return True, matches[-1].strip()
+        else:
+            return False, ""
+
+    def clean_code_output(self, output: str) -> str:
+        if self.MAX_CODE_OUTPUT_LENGTH < len(output):
+            return (
+                output[: self.MAX_CODE_OUTPUT_LENGTH // 5]
+                + "...(skip)..."
+                + output[-self.MAX_CODE_OUTPUT_LENGTH // 5 :]
+            )
+
+        return output
 
     def chat(self, user_message: str, VERBOSE: bool = False):
         self.dialog.append({"role": "user", "content": user_message})
-
-        code_block_output = ""
-        attempt = 0
-        img_data = None
 
         if VERBOSE:
             print(
                 "###User : " + Fore.BLUE + Style.BRIGHT + user_message + Style.RESET_ALL
             )
             print("\n###Assistant : ")
-        while True:
-            if attempt > 3:
-                break
-            dialog_tokens = self.dialog_to_prompt(dialog=self.dialog)
 
-            gen_tokens = self.model.generate(
-                dialog_tokens.cuda(),
-                max_new_tokens=512,
-                top_p=1.0,
-                do_sample=True,
-                use_cache=True,
+        # setup
+        HAS_CODE = False  # For now
+        INST_END_TOK_FLAG = False
+        full_generated_text = ""
+        prompt = self.dialog_to_prompt(dialog=self.dialog)
+        start_prompt = copy.deepcopy(prompt)
+        prompt = f"{prompt} {E_INST}"
+
+        generated_text = self.generate(prompt)
+        full_generated_text += generated_text
+        HAS_CODE, generated_code_block = self.extract_code_blocks(generated_text)
+
+        attempt = 1
+        while HAS_CODE:
+            print(attempt)
+            # if no code then doesn't have to execute it
+
+            code_block_output, error_flag = self.execute_code_and_return_output(
+                generated_code_block
             )
+            code_block_output = self.clean_code_output(code_block_output)
 
-            generated_text_all = self.tokenizer.batch_decode(gen_tokens)[0]
-            generated_text = self.tokenizer.batch_decode(
-                gen_tokens[:, dialog_tokens.shape[1] :]
-            )[0]
+            generated_text = (
+                f"{generated_text}\n{B_RESULT}\n{code_block_output}\n{E_RESULT}\n"
+            )
+            full_generated_text += f"\n{B_RESULT}\n{code_block_output}\n{E_RESULT}\n"
 
-            last_answer = self.parse_last_answer(generated_text_all)
-
-            generated_code_blocks = self.extract_code_blocks(generated_text)
-
-            if len(generated_code_blocks) > 0:
-                # Find the position of the first code block in the last answer
-                first_code_block_pos = (
-                    generated_text.find(generated_code_blocks[0])
-                    if generated_code_blocks
-                    else -1
-                )
-                text_before_first_code_block = (
-                    generated_text
-                    if first_code_block_pos == -1
-                    else generated_text[:first_code_block_pos]
-                )
-                if VERBOSE:
-                    print(Fore.GREEN + text_before_first_code_block + Style.RESET_ALL)
-                if VERBOSE:
-                    print(
-                        Fore.YELLOW
-                        + generated_code_blocks[0]
-                        + "\n```\n"
-                        + Style.RESET_ALL
-                    )
-                code_block_output, error_flag = self.execute_code_and_return_output(
-                    generated_code_blocks[0]
+            first_code_block_pos = (
+                generated_text.find(generated_code_block)
+                if generated_code_block
+                else -1
+            )
+            text_before_first_code_block = (
+                generated_text
+                if first_code_block_pos == -1
+                else generated_text[:first_code_block_pos]
+            )
+            if VERBOSE:
+                print(Fore.GREEN + text_before_first_code_block + Style.RESET_ALL)
+                print(Fore.GREEN + generated_code_block + Style.RESET_ALL)
+                print(
+                    Fore.YELLOW
+                    + f"\n{B_RESULT}\n{code_block_output}\n{E_RESULT}\n"
+                    + Style.RESET_ALL
                 )
 
-                code_block_output = f"{code_block_output}"
+            prompt = f"{prompt} {E_INST}{generated_text}"
+            generated_text = self.generate(prompt)
+            HAS_CODE, generated_code_block = self.extract_code_blocks(generated_text)
 
-                if code_block_output is not None:
-                    code_block_output = code_block_output.strip()
-
-                code_block_output_str = f"\n```RESULTS\n{code_block_output}\n```\n"
-                if VERBOSE:
-                    print(Fore.LIGHTBLACK_EX + code_block_output_str + Style.RESET_ALL)
-                    # markdown = Markdown(code_block_output_str)print(markdown)
-
-                gen_final = f"{text_before_first_code_block}{generated_code_blocks[0]}\n```{code_block_output_str}"
-
-                if self.dialog[-1]["role"] == "user":
-                    self.dialog.append({"role": "assistant", "content": gen_final})
-                elif self.dialog[-1]["role"] == "assistant":
-                    self.dialog[-1]["content"] += gen_final
-            else:
-                if self.dialog[-1]["role"] == "user":
-                    self.dialog.append({"role": "assistant", "content": generated_text})
-                else:
-                    self.dialog[-1]["content"] += generated_text
-                # no code found break
-                if VERBOSE:
-                    print(Fore.GREEN + generated_text + Style.RESET_ALL)
-                break
-
-            # early stop
-            if DEFAULT_EOS_TOKEN in self.dialog[-1]["content"]:
-                self.hard_coded_eos_splitter()
-                if img_data is not None:
-                    return (
-                        f"{self.dialog[-1]}\n![plot](data:image/png;base64,{img_data})"
-                    )
-                return self.dialog[-1]
-
-            self.hard_coded_eos_splitter()
+            full_generated_text += generated_text
 
             attempt += 1
-            # print(f"====Attempt[{attempt}]====\n{self.dialog[-1]['content']}")
 
-        # print(self.dialog)
-        if img_data is not None:
-            return f"{self.dialog[-1]}\n![plot](data:image/png;base64,{img_data})"
+        if VERBOSE:
+            print(Fore.GREEN + generated_text + Style.RESET_ALL)
+
+        print(full_generated_text)
+
         return self.dialog[-1]
 
 
@@ -249,11 +236,20 @@ if __name__ == "__main__":
 
     LLAMA2_MODEL_PATH = "./ckpt/llama-2-13b-chat"
     LLAMA2_MODEL_PATH = "meta-llama/Llama-2-70b-chat-hf"
+    LLAMA2_FINETUNEED_PATH = "./output/llama-2-7b-chat-ci"
 
-    interpreter = LlamaCodeInterpreter(model_path=LLAMA2_MODEL_PATH, load_in_4bit=True)
+    interpreter = LlamaCodeInterpreter(
+        model_path=LLAMA2_FINETUNEED_PATH, load_in_4bit=True
+    )
     output = interpreter.chat(
         user_message=random.choice(
-            ["who is current korean president?", "what is sin(20)?"]
+            [
+                # "In a circle with center \( O \), \( AB \) is a chord such that the midpoint of \( AB \) is \( M \). A tangent at \( A \) intersects the extended segment \( OB \) at \( P \). If \( AM = 12 \) cm and \( MB = 12 \) cm, find the length of \( AP \)."
+                # "A triangle \( ABC \) is inscribed in a circle (circumscribed). The sides \( AB \), \( BC \), and \( AC \) are tangent to the circle at points \( P \), \( Q \), and \( R \) respectively. If \( AP = 10 \) cm, \( BQ = 15 \) cm, and \( CR = 20 \) cm, find the radius of the circle.",
+                # "Given an integer array nums, return the total number of contiguous subarrays that have a sum equal to 0.",
+                # "what is second largest city in japan?",
+                "Can you show me 120days chart of tesla from today to before 120?"
+            ]
         ),
         VERBOSE=True,
     )
