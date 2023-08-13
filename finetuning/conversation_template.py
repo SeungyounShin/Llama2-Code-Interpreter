@@ -17,6 +17,9 @@ E_RESULT = "[/RESULT_TOK]"
 B_INST, E_INST = "[INST]", "[/INST]"
 B_SYS, E_SYS = "<<SYS>>", "<</SYS>>"
 
+BOS = "<s>"
+EOS = "</s>"
+
 CODE_SYS_PROMPT_FOR_TRAIN = """
 You are 'CodeLLama', an advanced Language Model assistant that can generate, execute, and evaluate code. 
 Respond to user queries by providing code-based solutions and insights.
@@ -24,17 +27,20 @@ Respond to user queries by providing code-based solutions and insights.
 
 
 def msg_to_code_result_tok_temp(msg: List[Dict]) -> str:
-    full_str = f"{B_SYS}\n{CODE_SYS_PROMPT_FOR_TRAIN}\n{E_SYS}\n\n"
+    full_str = f"{BOS}{B_INST} {B_SYS}\n{CODE_SYS_PROMPT_FOR_TRAIN}\n{E_SYS}\n\n"
 
-    for chat in msg:
+    user_first_flag = True
+    for idx, chat in enumerate(msg):
         if chat["role"] == "system":
             continue
         if chat["role"].lower() == "user":
-            chat["content"] = chat["content"].replace(
-                "/home/seungyoun/llama_code_interpreter/", "./"
-            )
-            full_str += f"{B_INST}\n###User : {chat['content']}\n"
-        elif chat["role"].lower() == "assistant":
+            chat["content"] = chat["content"]
+            if user_first_flag:
+                full_str += f"{chat['content']} {E_INST}"
+                user_first_flag = False
+            else:
+                full_str += f"{BOS}{B_INST}{chat['content']} {E_INST}"
+        elif chat["role"] == "assistant":
             chat["content"] = chat["content"].replace(
                 "/home/seungyoun/llama_code_interpreter/", "./"
             )
@@ -42,18 +48,19 @@ def msg_to_code_result_tok_temp(msg: List[Dict]) -> str:
             # Replace the code block start and end markers using regex
             code_pattern = re.compile(r"```python\n(.*?)```", re.DOTALL)
             chat["content"] = code_pattern.sub(
-                r"[CODE_START_TOK]\n\1\n[/CODE_END_TOK]\n", chat["content"]
+                r"[CODE_START_TOK]\n\1[/CODE_END_TOK]", chat["content"]
             )
 
             # Replace the result block start and end markers using regex
             result_pattern = re.compile(r"```RESULTS?\n(.*?)```", re.DOTALL)
             chat["content"] = result_pattern.sub(
-                r"[RESULT_TOK]\n\1\n[/RESULT_TOK]\n", chat["content"]
+                r"[RESULT_TOK]\n\1[/RESULT_TOK]", chat["content"]
             )
 
-            full_str += f"\n###Assistant : {chat['content']}\n{E_INST}\n"
+            full_str += f"{chat['content']}{EOS}"
 
     full_str = full_str.replace("')()", "')")
+    full_str = full_str.replace("/home/seungyoun/llama_code_interpreter/", "./")
 
     return full_str
 
