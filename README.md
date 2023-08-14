@@ -25,15 +25,12 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 ***Llama2 in Action***
 
 <p align="center" width="100%">
-<img src="/assets/president_code.gif" alt="example1_president_search_with_code" style="width: 600px; display: block; margin: auto; border-radius: 50%;">
+<img src="assets/result_nvidia_chart.gif" alt="example1_president_search_with_code" style="width: 600px; display: block; margin: auto; border-radius: 50%;">
 </p>
 
 </div>
 
-In response to the query, <span style="color:blue">"Who is the current president of South Korea?"</span>, Llama2 generates Python code for web scraping. This code targets the official website of the **South Korean government**, specifically extracting information from the exact URL.
-
-
-The script retrieves the HTML title tag which contains the current president's name. The output, <span style="color:green">`'대한민국 대통령 > 윤석열 대통령 > 취임사'`</span>, allows Llama2 to discern that the incumbent president is <span style="color:red">윤석열 (Yoon Suk-yeol)</span>.
+In the GIF, Llama2 is seen in action. A user types in the request: `Plot Nvidia 90 days chart.` Llama2, an advanced code interpreter fine-tuned on a select dataset, swiftly queries `Yahoo Finance`. Moments later, it fetches the latest Nvidia stock prices from the past 90 days. Using `Matplotlib`, Llama2 then generates a clear and detailed stock price chart for Nvidia, showcasing its performance over the given period.
 
 
 
