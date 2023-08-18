@@ -16,6 +16,8 @@ import re
 import torch
 import transformers
 from transformers import LlamaForCausalLM, LlamaTokenizer
+from peft import PeftModel
+
 
 sys.path.append(os.path.dirname(__file__))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +46,11 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 class LlamaCodeInterpreter(BaseCodeInterpreter):
     def __init__(
-        self, model_path: str, load_in_8bit: bool = False, load_in_4bit: bool = False
+        self,
+        model_path: str,
+        load_in_8bit: bool = False,
+        load_in_4bit: bool = False,
+        peft_model: Optional[str] = None,
     ):
         # build tokenizer
         self.tokenizer = LlamaTokenizer.from_pretrained(
@@ -79,6 +85,10 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
         )
 
         self.model.resize_token_embeddings(len(self.tokenizer))
+
+        if peft_model is not None:
+            peft_model = PeftModel.from_pretrained(self.model, peft_model)
+
         self.model = self.model.eval()
 
         self.dialog = [
@@ -162,7 +172,6 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
 
     def chat(self, user_message: str, VERBOSE: bool = False):
         self.dialog.append({"role": "user", "content": user_message})
-
         if VERBOSE:
             print(
                 "###User : " + Fore.BLUE + Style.BRIGHT + user_message + Style.RESET_ALL
@@ -183,8 +192,14 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
 
         attempt = 1
         while HAS_CODE:
-            print(attempt)
+            if attempt > 10:
+                break
             # if no code then doesn't have to execute it
+
+            # replace unknown thing to none
+            generated_code_block = generated_code_block.replace("<unk>_", "").replace(
+                "<unk>", ""
+            )
 
             code_block_output, error_flag = self.execute_code_and_return_output(
                 generated_code_block
@@ -226,7 +241,14 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
         if VERBOSE:
             print(Fore.GREEN + generated_text + Style.RESET_ALL)
 
-        print(full_generated_text)
+        self.dialog.append(
+            {
+                "role": "assistant",
+                "content": full_generated_text.replace("<unk>_", "")
+                .replace("<unk>", "")
+                .replace("</s>", ""),
+            }
+        )
 
         return self.dialog[-1]
 
@@ -247,8 +269,8 @@ if __name__ == "__main__":
                 # "In a circle with center \( O \), \( AB \) is a chord such that the midpoint of \( AB \) is \( M \). A tangent at \( A \) intersects the extended segment \( OB \) at \( P \). If \( AM = 12 \) cm and \( MB = 12 \) cm, find the length of \( AP \)."
                 # "A triangle \( ABC \) is inscribed in a circle (circumscribed). The sides \( AB \), \( BC \), and \( AC \) are tangent to the circle at points \( P \), \( Q \), and \( R \) respectively. If \( AP = 10 \) cm, \( BQ = 15 \) cm, and \( CR = 20 \) cm, find the radius of the circle.",
                 # "Given an integer array nums, return the total number of contiguous subarrays that have a sum equal to 0.",
-                # "what is second largest city in japan?",
-                "Can you show me 120days chart of tesla from today to before 120?"
+                "what is second largest city in japan?",
+                # "Can you show me 120days chart of tesla from today to before 120?"
             ]
         ),
         VERBOSE=True,
