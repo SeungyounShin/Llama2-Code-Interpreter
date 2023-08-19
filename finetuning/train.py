@@ -69,7 +69,7 @@ def create_peft_config(model):
         task_type=TaskType.CAUSAL_LM,
         inference_mode=False,
         r=8,
-        lora_alpha=32,
+        lora_alpha=16,
         lora_dropout=0.05,
         target_modules=["q_proj", "v_proj"],
     )
@@ -134,8 +134,11 @@ def preprocess(
     trajs: Sequence[str],
     tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
-    user_start_seq = [835, 4911, 584]  # ### User :
-    assistant_start_seq = [2277, 29937, 4007, 22137, 584]  # ### Assistant :
+    INST_START_INDEX = tokenizer.encode(f"{B_INST}")[-1]
+    INST_END_INDEX = tokenizer.encode(f"{E_INST}")[-1]
+    RESULT_START_INDEX = tokenizer.encode(f"{B_RESULT}")[-1]
+    RESULT_END_INDEX = tokenizer.encode(f"{E_RESULT}")[-1]
+
     """Preprocess the data by tokenizing."""
     examples_tokenized = _tokenize_fn(trajs, tokenizer)
 
@@ -143,10 +146,13 @@ def preprocess(
     input_ids = examples_tokenized["input_ids"]  # [torch.tensor , torch.tensor , ...]
     labels = copy.deepcopy(input_ids)
 
-    # IGNORE User Question
+    # IGNORE INDEX SET
     for i, label in enumerate(labels):
-        user_start_inds = find_all_sublist_start(label, user_start_seq)
-        assistant_start_inds = find_all_sublist_end(label, assistant_start_seq)
+        user_start_inds = find_all_sublist_start(label, [INST_START_INDEX])
+        assistant_start_inds = find_all_sublist_end(label, [INST_END_INDEX])
+
+        result_start_inds = find_all_sublist_start(label, [RESULT_START_INDEX])
+        result_end_inds = find_all_sublist_end(label, [RESULT_END_INDEX])
 
         # for debug
         # for len_i, ind in enumerate(label):
@@ -156,15 +162,21 @@ def preprocess(
             assistant_start_inds
         ), f"User and Assistant pair should be equal :: \n\tUser [{user_start_inds}]/\n\tAssistant [{assistant_start_inds}]\n\n Text : \n{trajs[i]}"
 
+        assert len(result_start_inds) == len(
+            result_end_inds
+        ), "Start and End indices pairs do not match."
+
         for user_start_ind, assistant_start_ind in zip(
             user_start_inds, assistant_start_inds
         ):
-            # print(tokenizer.decode(label[user_start_ind:assistant_start_ind]))
-            label[user_start_ind:assistant_start_ind] = IGNORE_INDEX
+            label[user_start_ind + 1 : assistant_start_ind - 1] = IGNORE_INDEX
+
+        for start, end in zip(result_start_inds, result_end_inds):
+            label[start + 1 : end - 1] = IGNORE_INDEX
 
     # cut max length
-    input_ids = [i[: 1024 + 356] for i in input_ids]
-    labels = [i[: 1024 + 356] for i in labels]
+    input_ids = [i[:1500] for i in input_ids]
+    labels = [i[:1500] for i in labels]
 
     return dict(input_ids=input_ids, labels=labels)
 
