@@ -1,0 +1,48 @@
+# Ignore .ckpt files
+ckpt
+
+# Ignore Python compiled files
+__pycache__/
+*.py[cod]
+
+# Ignore Python virtual environment
+venv/
+
+# Ignore Jupyter notebook checkpoints
+.ipynb_checkpoints/
+.git/
+.vscode/
+
+# Ignore .DS_Store on MacOS
+.DS_Store
+
+rilab_key.txt
+gpt4_custom_code_interpreter/rilab_key.txt
+openai_api_key.txt
+
+gpt4_custom_code_interpreter/
+tmp/
+output/
+wandb/
+
+utils/const.py
+gpt_data_gen/
+*.json
+*.txt
+*.sh
+*.pt 
+*.pth 
+*.ckpt
+*.tokenizer
+
+# eval data
+eval/ds1000_data
+eval/grade-school-math
+
+# gradio features
+chatbot.py
+chatbot_feat.py
+chatbot_feat2.py
+gradio_test.py
+
+
