@@ -366,7 +366,7 @@ if __name__ == "__main__":
             timeout_flag = True
             print("Error: Code execution timed out after 10 seconds.")
 
-        if wrong_flag and (not timeout_flag):
+        if wrong_flag or timeout_flag:
             # not timeout but got wrong answer
             wrong += 1
 
