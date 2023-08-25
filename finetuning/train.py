@@ -175,8 +175,8 @@ def preprocess(
             label[start + 1 : end - 1] = IGNORE_INDEX
 
     # cut max length
-    input_ids = [i[:1425] for i in input_ids]
-    labels = [i[:1425] for i in labels]
+    input_ids = [i[:1500] for i in input_ids]
+    labels = [i[:1500] for i in labels]
 
     return dict(input_ids=input_ids, labels=labels)
 
@@ -285,10 +285,19 @@ def build_model_from_hf_path(
             hf_model_path,
             load_in_8bit=True,
             device_map="auto",
+            ignore_mismatched_sizes=True,
             torch_dtype=torch.float16,
         )
     else:
-        model = LlamaForCausalLM.from_pretrained(hf_model_path)
+        # for llama
+        # model = LlamaForCausalLM.from_pretrained(
+        #    hf_model_path, ignore_mismatched_sizes=True
+        # )
+
+        # for codellama
+        from codellama_wrapper import CodeLlamaForCausalLM
+
+        model = CodeLlamaForCausalLM.from_pretrained(hf_model_path)
 
     model.resize_token_embeddings(len(tokenizer))
 
