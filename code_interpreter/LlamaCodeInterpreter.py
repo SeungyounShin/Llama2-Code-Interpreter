@@ -202,10 +202,9 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
             )
 
             code_block_output, error_flag = self.execute_code_and_return_output(
-                f"from typing import List\n{generated_code_block}"
+                f"{generated_code_block}"
             )
             code_block_output = self.clean_code_output(code_block_output)
-
             generated_text = (
                 f"{generated_text}\n{B_RESULT}\n{code_block_output}\n{E_RESULT}\n"
             )

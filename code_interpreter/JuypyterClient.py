@@ -32,7 +32,7 @@ class JupyterNotebook:
         error_flag = False
         while True:
             try:
-                msg = self.kc.get_iopub_msg(timeout=999)
+                msg = self.kc.get_iopub_msg(timeout=20)
 
                 msg_type = msg["header"]["msg_type"]
                 content = msg["content"]

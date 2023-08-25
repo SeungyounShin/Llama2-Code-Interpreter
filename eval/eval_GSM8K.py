@@ -55,8 +55,18 @@ few_shot_3 = [
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from code_interpreter.LlamaCodeInterpreter import LlamaCodeInterpreter
+    import argparse
 
-    LLAMA2_FINETUNEED_PATH = "./output/llama-2-7b-chat-ci"
+    parser = argparse.ArgumentParser(description="Process path for LLAMA2_FINETUNEED.")
+    parser.add_argument(
+        "--path",
+        type=str,
+        required=True,
+        help="Path to the finetuned LLAMA2 model.",
+        default='"./output/llama-2-7b-chat-ci"',
+    )
+    args = parser.parse_args()
+    LLAMA2_FINETUNEED_PATH = args.path
 
     interpreter = LlamaCodeInterpreter(
         model_path=LLAMA2_FINETUNEED_PATH,
