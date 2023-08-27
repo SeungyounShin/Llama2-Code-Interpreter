@@ -17,13 +17,34 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 [The purpose and direction of the project](https://github.com/SeungyounShin/Llama2-Code-Interpreter/wiki)
 
+## News
+
+- 🔥🔥🔥[2023/08/27] We're thrilled to announce that our **Llama2 Code Interpreter-70B-V1.0** model achieved a remarkable **70.12pass@1** on the [HumanEval Benchmarks](https://github.com/openai/human-eval).
+
+## Llama2 Code Interpreter Performance Metrics
+
+### HumanEval
+
+| Model                          | Score  |
+|-------------------------------|--------|
+| Codellama instruct 7b         | 34.8%  |
+| Codellama instruct 7b - finetuning | 70.12% |
+
+### GSM8K
+
+| Model                          | Score  |
+|-------------------------------|--------|
+| Code Llama 7B                 | 13%    |
+| Code Llama 13B                | 20.8%  |
+| Codellama instruct 7b - finetuning | 28%    |
+
+
 ## 🌟 Key Features
 
 - [x] 🚀 **Code Generation and Execution**: Llama2 is capable of generating code, which it then automatically identifies and executes within its generated code blocks.
 - [x] Monitors and retains Python variables that were used in previously executed code blocks.
 - [x] 🌟 At the moment, my focus is on "Data development for GPT-4 code interpretation" and "Enhancing the model using this data". For more details, check out the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) in our repository.
 - [x] 🌟 CodeLlama Support [CodeLlama2](https://github.com/facebookresearch/codellama)
-
 
 ## Examples
 
