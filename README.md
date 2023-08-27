@@ -14,7 +14,7 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 - [x] 🚀 **Code Generation and Execution**: Llama2 is capable of generating code, which it then automatically identifies and executes within its generated code blocks.
 - [x] Monitors and retains Python variables that were used in previously executed code blocks.
 - [ ] 🌟 At the moment, my focus is on "Data development for GPT-4 code interpretation" and "Enhancing the model using this data". For more details, check out the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) in our repository.
-- [ ] 🌟 CodeLlama Support [CodeLlama2](https://github.com/facebookresearch/codellama)
+- [x] 🌟 CodeLlama Support [CodeLlama2](https://github.com/facebookresearch/codellama)
 
 
 ## Examples
@@ -55,27 +55,37 @@ pip install -r requirements.txt
 
 I see, you want to include the part about setting the `LLAMA_CI_PATH` environment variable in the setup instructions. Here's how you might write it:
 
-### Setup
+It looks like you want to modify instructions for running a Gradio app for your GitHub project. I'll rewrite the instructions based on the provided details:
 
-**Set the `LLAMA_CI_PATH` environment variable:** This script requires the `LLAMA_CI_PATH` environment variable to be set to the directory that contains the relevant code. You can set it to the current directory like this:
+---
 
-```bash
-export LLAMA_CI_PATH=$(pwd)
-```
+### Run App with GPT4 finetunned Llama Model
 
-Please note that this setting is only valid for the current shell session. If you want to make it permanent, you can add it to your shell's startup file (like `.bashrc` or `.bash_profile`).
+To start interacting with Llama2 via the Gradio UI using  `codellama-7b-instruct-pad`, follow the steps below:
 
-### Run App
+1. **Clone the Repository (if you haven't already)**:
+   ```bash
+   git clone <YOUR_REPOSITORY_URL>
+   cd <YOUR_REPOSITORY_DIRECTORY>
+   ```
 
-To start interacting with Llama2 via the Gradio UI:
+2. **Run the Gradio App**:
+   ```bash
+   python3 chatbot.py --path Seungyoun/codellama-7b-instruct-pad
+   ```
 
-```bash
-python3 chatbot.py --model_path <your-model-path>
-```
+For those who want to use other models:
 
-Replace `<your-model-path>` with the path to the model file you want to use. (Usally I recommend you to use chat-type model e.g. `meta-llama/Llama-2-13b-chat`)
+### General Instructions to Run App
 
-Please let me know if you need help with a specific part of this setup process.
+To start interacting with Llama2 via the Gradio UI using other models:
+
+1. **Run the Command**:
+   ```bash
+   python3 chatbot.py --model_path <your-model-path>
+   ```
+
+Replace `<your-model-path>` with the path to the model file you wish to use. A recommended model for chat interactions is `meta-llama/Llama-2-13b-chat`.
 
 ## Contributions
 
