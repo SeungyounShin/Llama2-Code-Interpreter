@@ -24,7 +24,7 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 **HumanEval**
 
-| Model                          | Score  |
+| Model                          | Score(pass@1)  |
 |-------------------------------|--------|
 | Codellama instruct 7b         | 34.8%  |
 | Codellama instruct 7b - finetuning | 70.12% |
