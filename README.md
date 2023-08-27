@@ -65,8 +65,8 @@ To start interacting with Llama2 via the Gradio UI using  `codellama-7b-instruct
 
 1. **Clone the Repository (if you haven't already)**:
    ```bash
-   git clone <YOUR_REPOSITORY_URL>
-   cd <YOUR_REPOSITORY_DIRECTORY>
+   git clone https://github.com/SeungyounShin/Llama2-Code-Interpreter.git
+   cd Llama2-Code-Interpreter
    ```
 
 2. **Run the Gradio App**:
