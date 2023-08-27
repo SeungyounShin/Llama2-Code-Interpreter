@@ -5,6 +5,14 @@
 
 # Llama2 Code Interpreter
 
+<p align="center">
+🤗 <a href="https://huggingface.co/Seungyoun/codellama-7b-instruct-pad" target="_blank">CodeLlama 7B Finetuned Model (HF)</a> 
+</p>
+
+
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 This project allows LLM to generate code, execute it, receive feedback, debug, and answer questions based on the whole process. It is designed to be intuitive and versatile, capable of dealing with multiple languages and frameworks.
 
 [The purpose and direction of the project](https://github.com/SeungyounShin/Llama2-Code-Interpreter/wiki)
@@ -13,13 +21,11 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 - [x] 🚀 **Code Generation and Execution**: Llama2 is capable of generating code, which it then automatically identifies and executes within its generated code blocks.
 - [x] Monitors and retains Python variables that were used in previously executed code blocks.
-- [ ] 🌟 At the moment, my focus is on "Data development for GPT-4 code interpretation" and "Enhancing the model using this data". For more details, check out the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) in our repository.
+- [x] 🌟 At the moment, my focus is on "Data development for GPT-4 code interpretation" and "Enhancing the model using this data". For more details, check out the [feat/finetuning branch](https://github.com/SeungyounShin/Llama2-Code-Interpreter/tree/feat/finetuning) in our repository.
 - [x] 🌟 CodeLlama Support [CodeLlama2](https://github.com/facebookresearch/codellama)
 
 
 ## Examples
-
-
 
 ---
 <div align="center">
