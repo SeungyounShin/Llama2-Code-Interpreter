@@ -19,7 +19,7 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 ## News
 
-- 🔥🔥🔥[2023/08/27] We're thrilled to announce that our **Llama2 Code Interpreter-70B-V1.0** model achieved a remarkable **70.12pass@1** on the [HumanEval Benchmarks](https://github.com/openai/human-eval).
+- 🔥🔥🔥[2023/08/27] We're thrilled to announce that our **Llama2 Code Interpreter-7B (Finetuned from [CodeLlama-7B-Instruct](https://huggingface.co/codellama/CodeLlama-7b-Instruct-hf))** model achieved a remarkable **70.12pass@1** on the [HumanEval Benchmarks](https://github.com/openai/human-eval).
 
 
 **HumanEval**
