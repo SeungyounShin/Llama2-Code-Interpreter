@@ -357,7 +357,7 @@ if __name__ == "__main__":
         )
         print(syntax)
 
-        wrong_flag = False
+        wrong_flag = True
         timeout_flag = False
         try:
             wrong_flag = exec_with_timeout(import_str, full_test_code)

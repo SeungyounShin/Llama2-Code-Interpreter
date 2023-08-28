@@ -243,32 +243,9 @@ if __name__ == "__main__":
     import random
 
     SEED_TASK = [
-        """
-Insert a number 'delimeter' at the beginning and end of the input list `numbers`.
->>> intersperse_start_end([1, 2, 3], 4) == [4, 1, 2, 3, 4]
->>> intersperse_start_end([], 4) == [4, 4]
-""",
-        """
-Insert two numbers 'delimiter1' and 'delimiter2' alternately between every two consecutive elements of the input list `numbers`.
->>> intersperse_two([1, 2, 3], 4, 5) == [1, 4, 2, 5, 3]
->>> intersperse_two([], 4, 5) == []
-""",
-        """
-Insert a number 'delimiter' after every 'n' elements in the input list `numbers`.
-intersperse_every_n([1, 2, 3, 4, 5, 6], 7, 2) == [1, 2, 7, 3, 4, 7, 5, 6]
-intersperse_every_n([1, 2, 3], 4, 5) == [1, 2, 3]
-""",
-        """
-Insert a number 'delimiter' at the specified indices in the input list `numbers`.
->>> intersperse_at_indices([1, 2, 3, 4], 5, [1, 3]) == [1, 5, 2, 3, 5, 4]
->>> intersperse_at_indices([1, 2, 3], 4, [0, 4]) == [4, 1, 2, 3, 4]
-""",
-        """
-Insert a list of 'delimiters' sequentially between every two consecutive elements of the input list `numbers`.
-intersperse_multiple([1, 2, 3], [4, 5]) == [1, 4, 2, 5, 3]
-intersperse_multiple([1, 2, 3, 4], [5, 6]) == [1, 5, 2, 6, 3, 5, 4]
-Note: If the delimiters list is exhausted, it starts again from the beginning.
-""",
+        # "Resize this image to 512x512\nUser Uploaded File : './tmp/img.png'",
+        "Write a Python script that retrieves Google Trends data for a given keyword and stock price data for a specific company over the same timeframe, normalizes both datasets to the same scale, and then plots them on the same graph to analyze potential correlations.",
+        "Could you conduct a frequency analysis on Apple's stock price to determine any cyclic patterns that occur on a weekly, monthly, or quarterly basis?",
     ]
 
     questions = SEED_TASK
@@ -279,7 +256,7 @@ Note: If the delimiters list is exhausted, it starts again from the beginning.
         interpreter = GPTCodeInterpreter()
 
         question = questions[i]
-        output = interpreter.chat(user_message=question, VERBOSE=True)
+        output = interpreter.chat(user_message=question, VERBOSE=True, MAX_RETRY=5)
 
         sample = clean_the_dialog(interpreter.dialog, question)
 

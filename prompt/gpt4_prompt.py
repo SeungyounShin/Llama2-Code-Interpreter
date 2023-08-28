@@ -257,7 +257,13 @@ extra_prompt = """
 + As an Code Interperter, You aare able to browse the internet or access documents directly (by using beautifulsoup or requests this will need cleaning the text)
 + Provide Dummy data and test the function if needed
 + 'Do not' pip install 
-+ You need to use datetime to check current date
++ You must need to use datetime to check current date
+    For Example,
+from datetime import datetime, timedelta
+# Download data for 180days
+data = yf.download('GOOGL', start=datetime.today(), end=end_date - timedelta(days=180))
+
++ make sure to use yfinance for financial data gathering (do not use pandas_datareader)
 + when plotting you need to 
 [x] plt.show()
 [o] plt.savefig('./tmp/plot.png')
@@ -265,5 +271,7 @@ extra_prompt = """
     then
     ![plot]('./tmp/plot.png')    
 
+
+    
 Let's think step-by-step
 """

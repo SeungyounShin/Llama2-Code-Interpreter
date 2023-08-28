@@ -26,6 +26,7 @@ output/
 wandb/
 
 utils/const.py
+utils/hf_model_upload.py
 gpt_data_gen/
 *.json
 *.txt
@@ -37,10 +38,9 @@ gpt_data_gen/
 
 # eval data
 eval/ds1000_data
-eval/grade-school-math
+eval/grade-school-math 
 
 # gradio features
-chatbot.py
 chatbot_feat.py
 chatbot_feat2.py
 gradio_test.py

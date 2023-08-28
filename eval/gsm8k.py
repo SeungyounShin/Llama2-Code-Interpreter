@@ -76,7 +76,7 @@ if __name__ == "__main__":
     sample_data = load_jsonl(JSON_PATH)
     correct = 0
 
-    for idx, data_dict in enumerate(tqdm(sample_data[:100])):
+    for idx, data_dict in enumerate(tqdm(sample_data)):
         question = data_dict["question"]
         answer = data_dict["answer"]
         answer_only = data_dict["answer_refined"]
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         )
 
         pattern = r"\[RESULT_TOK\]\s*(\d+(\.\d+)?)\s*\[/RESULT_TOK\]"
-        pred = -9212323
+        pred = -9212323  # for no code output (which is wrong answer)
         if re.search(pattern, output["content"]):
             pred = re.search(pattern, output["content"]).group(1)
 

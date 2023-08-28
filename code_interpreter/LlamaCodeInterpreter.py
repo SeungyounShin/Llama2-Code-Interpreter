@@ -103,6 +103,7 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
         self.nb = JupyterNotebook()
         self.MAX_CODE_OUTPUT_LENGTH = 3000
         out = self.nb.add_and_run(TOOLS_CODE)  # tool import
+        print(out)
 
     def dialog_to_prompt(self, dialog: List[Dict]) -> str:
         full_str = msg_to_code_result_tok_temp(dialog)
@@ -229,7 +230,8 @@ class LlamaCodeInterpreter(BaseCodeInterpreter):
                     + Style.RESET_ALL
                 )
 
-            prompt = f"{prompt} {E_INST}{generated_text}"
+            # prompt = f"{prompt} {E_INST}{generated_text}"
+            prompt = f"{prompt}{generated_text}"
             generated_text = self.generate(prompt)
             HAS_CODE, generated_code_block = self.extract_code_blocks(generated_text)
 
