@@ -17,6 +17,13 @@ This project allows LLM to generate code, execute it, receive feedback, debug, a
 
 [The purpose and direction of the project](https://github.com/SeungyounShin/Llama2-Code-Interpreter/wiki)
 
+## Quick Start
+
+**Run the Gradio App**:
+   ```bash
+   python3 chatbot.py --path Seungyoun/codellama-7b-instruct-pad
+   ```
+
 ## News
 
 - 🔥🔥🔥[2023/08/27] We're thrilled to announce that our **[🤗 Llama2 Code Interpreter-7B](https://huggingface.co/Seungyoun/codellama-7b-instruct-pad) (Finetuned from [CodeLlama-7B-Instruct](https://huggingface.co/codellama/CodeLlama-7b-Instruct-hf))** model achieved a remarkable **70.12pass@1** on the [HumanEval Benchmarks](https://github.com/openai/human-eval).
@@ -64,24 +71,16 @@ In the GIF, Llama2 is seen in action. A user types in the request: `Plot Nvidia 
 
 ## Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/SeungyounShin/Llama2-Code-Interpreter.git
-```
+1. **Clone the Repository (if you haven't already)**:
+   ```bash
+   git clone https://github.com/SeungyounShin/Llama2-Code-Interpreter.git
+   cd Llama2-Code-Interpreter
+   ```
 
-2. Change directory:
-```bash
-cd Llama2-Code-Interpreter.git
-```
-
-3. Install the required dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-I see, you want to include the part about setting the `LLAMA_CI_PATH` environment variable in the setup instructions. Here's how you might write it:
-
-It looks like you want to modify instructions for running a Gradio app for your GitHub project. I'll rewrite the instructions based on the provided details:
+2. **Install the required dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ---
 
@@ -89,11 +88,6 @@ It looks like you want to modify instructions for running a Gradio app for your 
 
 To start interacting with Llama2 via the Gradio UI using  `codellama-7b-instruct-pad`, follow the steps below:
 
-1. **Clone the Repository (if you haven't already)**:
-   ```bash
-   git clone https://github.com/SeungyounShin/Llama2-Code-Interpreter.git
-   cd Llama2-Code-Interpreter
-   ```
 
 2. **Run the Gradio App**:
    ```bash
