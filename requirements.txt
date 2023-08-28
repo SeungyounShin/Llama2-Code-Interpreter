@@ -1,0 +1,31 @@
+accelerate==0.21.0
+bitsandbytes==0.41.1
+colorama==0.4.6
+coloredlogs==15.0.1
+colorlog==6.7.0
+datasets==2.12.0
+deepspeed==0.10.1
+diffusers==0.20.0
+einops==0.6.1
+gradio==3.37.0
+ipykernel==6.25.1
+ipython==8.12.2
+jupyter_client==8.3.0
+jupyter_core==5.3.0
+Markdown==3.4.3
+nbclient==0.8.0
+nbconvert==7.7.1
+nbformat==5.8.0
+omegaconf==2.3.0
+openai==0.27.7
+peft @ git+https://github.com/huggingface/peft.git@6c44096c7b8d55a2ecf24be9bc68393467e1584a
+rich
+scikit-learn
+scipy
+seaborn
+sentencepiece==0.1.99
+termcolor==2.3.0
+tqdm
+transformers @ git+https://github.com/huggingface/transformers@f26099e7b5cf579f99a42bab6ddd371bf2c8d548
+triton==2.0.0
+yfinance==0.2.28
