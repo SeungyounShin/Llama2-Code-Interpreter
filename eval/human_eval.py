@@ -273,6 +273,7 @@ def exec_with_timeout(import_str, full_test_code):
     try:
         exec(f"{import_str}\n{full_test_code}")
     except Exception as e:
+        print(f"Error : [{e}]")
         return False  # Return False if there's an error during execution
     return True  # Return True if executed without errors
 
@@ -290,6 +291,13 @@ if __name__ == "__main__":
         help="Path to the finetuned LLAMA2 model.",
         default='"./output/llama-2-7b-chat-ci"',
     )
+    parser.add_argument(
+        "--max-retry",
+        type=int,
+        required=False,
+        help="Maximum number of retries.",
+        default=5,  # You can set any default value you want here.
+    )
     args = parser.parse_args()
     LLAMA2_FINETUNEED_PATH = args.path
     PROGRAMMING_PUZZLE_Q = False
@@ -300,7 +308,7 @@ if __name__ == "__main__":
     )
 
     problems = read_problems()
-    correct = 0
+    correct_total = 0
     total_problems = len(problems)
 
     for idx, task_id in enumerate(problems):
@@ -323,14 +331,14 @@ if __name__ == "__main__":
             # programming puzzle
             output_str = interpreter.chat(
                 user_message=f"Given the function definition:\n{programming_puzzle}\nPlease provide the best implementation for it.",
-                MAX_TRY=6,
+                MAX_TRY=args.max_retry,
                 VERBOSE=False,
             )["content"]
 
         else:
             output_str = interpreter.chat(
                 user_message=f"Create a Python script for this problem:\n{text_only_problem}",
-                MAX_TRY=6,
+                MAX_TRY=args.max_retry,
                 VERBOSE=False,
             )["content"]
 
@@ -343,9 +351,7 @@ if __name__ == "__main__":
                 function_str = code_block
 
         function_name = get_function_name(function_str)
-        full_test_code = (
-            f"{function_str}\n{problems[task_id]['test']}\ncheck({function_name})"
-        )
+        full_test_code = f"{function_str}\n#-----------\n{problems[task_id]['test']}\ncheck({function_name})"
 
         # Print the full_test_code with syntax highlighting
         syntax = Syntax(
@@ -357,24 +363,22 @@ if __name__ == "__main__":
         )
         print(syntax)
 
-        wrong_flag = True
+        is_correct = False  # default is wrong
         timeout_flag = False
         try:
-            wrong_flag = exec_with_timeout(import_str, full_test_code)
-        except TimeoutError:
-            wrong += 1
+            is_correct = exec_with_timeout(import_str, full_test_code)
+        except TimeoutError as e:
             timeout_flag = True
-            print("Error: Code execution timed out after 10 seconds.")
+            print(f"Timeout with error msg : {e}")
 
-        if wrong_flag or timeout_flag:
-            # not timeout but got wrong answer
-            wrong += 1
+        if is_correct:
+            correct_total += 1
 
-        acc = ((idx + 1) - wrong) / (idx + 1)
+        acc = (correct_total) / (idx + 1)
 
         # Constructing the output
         accuracy_text = Text(
-            f"Accuracy: {(idx+1)-wrong}/{idx+1}[{total_problems}] = {acc:.2%}",
+            f"Accuracy: {correct_total}/{idx+1}[{total_problems}] = {acc:.2%}",
             style="bold blue",
         )
         panel = Panel(accuracy_text, title="Results", border_style="green")
