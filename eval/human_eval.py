@@ -1,4 +1,5 @@
 import os, sys
+import traceback
 
 HUMAN_EVAL_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -10,6 +11,10 @@ from human_eval.data import write_jsonl, read_problems
 from finetuning.conversation_template import msg_to_code_result_tok_temp
 from code_interpreter.llama_hf import build_model_from_hf_path
 from code_interpreter.LlamaCodeInterpreter import LlamaCodeInterpreter
+from code_interpreter.GPTCodeInterpreter import GPTCodeInterpreter
+from code_interpreter.RetrospectiveGPTCodeInterpreter import (
+    RetrospectiveGPTCodeInterpreter,
+)
 
 import re
 
@@ -20,11 +25,14 @@ from rich.text import Text
 
 from timeout_decorator import timeout
 
+wrong = 0
+
 
 def extract_text(prompt, remove_lines=True):
     token = '"""'
     start = token
     end = ">>>"
+    # end = '"""'
 
     start_idx = prompt.find(start) + len(start)
     end_idx = prompt.find(end)
@@ -41,6 +49,25 @@ def extract_all_code_block(input_str: str) -> str:
     pattern = r"\[CODE_START_TOK\](.*?)\[/CODE_END_TOK\]"
     matches = re.findall(pattern, input_str, re.DOTALL)
     return "\n".join([match.strip() for match in matches]) if matches else None
+
+
+def extract_all_code_block_gpt(input_str: str) -> str:
+    pattern = r"```python(.*?)```"
+    matches = re.findall(pattern, input_str, re.DOTALL)
+
+    return "\n".join([match.strip() for match in matches]) if matches else None
+
+
+def delete_print_asser(code_text: str):
+    lines = code_text.split("\n")
+    new_lines = list()
+    for i in lines:
+        if i.strip().startswith("print("):
+            continue
+        new_lines.append(i)
+
+    new_code_text = "\n".join(new_lines)
+    return new_code_text
 
 
 def extract_function_from_code_block(code_block: str) -> str:
@@ -76,11 +103,33 @@ def extract_function_from_code_block(code_block: str) -> str:
     return "\n".join(function_lines)
 
 
+def get_last_outermost_function_name(function_str):
+    matches = re.findall(r"^def (\w+)", function_str, re.MULTILINE)
+    if matches:
+        return matches[-1]  # Return the last (outermost) function name
+    return ""
+
+
+def get_last_function_name(function_str):
+    # Regular expression to match a function definition
+    matches = re.findall(r"def (\w+)", function_str)
+    if matches:
+        return matches[-1]  # Return the last function name
+    return ""
+
+
+def get_outermost_function_name(function_str):
+    matches = re.findall(r"^def (\w+)", function_str, re.MULTILINE)
+    if matches:
+        return matches[0]  # Return the first (outermost) function name
+    return ""
+
+
 def get_function_name(function_str):
     # Regular expression to match a function definition
     match = re.search(r"def (\w+)", function_str)
     if match:
-        return match.group(1)
+        return match.group(0)
     return ""
 
 
@@ -99,188 +148,21 @@ import math
 from typing import List, Tuple, Optional
 """
 
-example1 = """
-from typing import List
 
-def max_subarray(nums: List[int]) -> int:
-    \"""
-    Find the contiguous subarray (containing at least one number) which has the largest sum and return its sum.
-    
-    >>> max_subarray([-2,1,-3,4,-1,2,1,-5,4])
-    6
-    # Explanation: The contiguous subarray [4,-1,2,1] has the largest sum = 6.
-    
-    >>> max_subarray([1])
-    1
-    
-    >>> max_subarray([-1,-2])
-    -1
-    \"""
-"""
-
-few_shot_1 = [
-    {
-        "role": "user",
-        "content": f"Given the function definition:\n{example1}\nPlease provide the best implementation for it.",
-    },
-    {
-        "role": "assistant",
-        "content": """
-Let me provide you with a solution using Kadane's algorithm, which is an efficient O(n) approach to solve the Maximum Subarray Problem.
-Here's the solution in the desired format:
-
-[CODE_START_TOK]
-def max_subarray(nums: List[int]) -> int:
-    max_current = max_global = nums[0]
-    for i in range(1, len(nums)):
-        max_current = max(nums[i], max_current + nums[i])
-        if max_current > max_global:
-            max_global = max_current
-    return max_global
-
-assert max_subarray([-2,1,-3,4,-1,2,1,-5,4]) == 6
-assert max_subarray([1]) == 1
-assert max_subarray([-1,-2]) == -1
-[/CODE_END_TOK]
-[RESULT_TOK]
-
-[/RESULT_TOK]
-
-The solution passed all the test cases without any assertion errors, which means the function works as expected for the provided test cases.
-""",
-    },
-]
-
-example2 = """
-def is_three(nums: List[int]) -> bool:
-    \"""
-    Check sum of given list is 3 if 3 return True else Flase
-    >>> is_three([1,2])
-    True
-    >>> is_three([-1,0,4,2])
-    False
-    \"""
-"""
-
-few_shot_2 = [
-    {
-        "role": "user",
-        "content": f"Given the function definition:\n{example2}\nPlease provide the best implementation for it.",
-    },
-    {
-        "role": "assistant",
-        "content": """
-
-[CODE_START_TOK]
-def is_three(nums: List[int]) -> bool:
-    return sum(nums) == 3
-
-print(is_three([1,2])) # expected to be True
-print(is_three([-1,0,4,2])) # expected to be False
-[/CODE_END_TOK]
-[RESULT_TOK]
-True
-False
-[/RESULT_TOK]
-
-The solution passed all the test cases, which means the function works as expected for the provided test cases.
-""",
-    },
-]
-
-example3 = """
-def reverse_string(x : str) -> str:
-    \"""
-    Print the given string in reverse order
-    >>> reverse_string('abc')
-    cba
-    >>> reverse_string('Hello world!')
-    !dlrow olleH
-    \"""
-"""
-
-few_shot_3 = [
-    {
-        "role": "user",
-        "content": f"Given the function definition:\n{example3}\nPlease provide the best implementation for it.",
-    },
-    {
-        "role": "assistant",
-        "content": """
-
-[CODE_START_TOK]
-def reverse_string(x : str) -> str:
-    return x[::-1]
-
-print(reverse_string('abc')) # expect 'cba'
-print(reverse_string('Hello world!')) # expect '!dlrow olleH'
-[/CODE_END_TOK]
-[RESULT_TOK]
-cba
-!dlrow olleH
-[/RESULT_TOK]
-
-The solution passed all the test cases, which means the function works as expected for the provided test cases.
-""",
-    },
-]
-
-example4 = """
-def list2str(x : List[str]) -> str:
-    \"""
-    Make string from given list
-    >>> list2str(['a','b','c'])
-    a b c
-    >>> list2str(['my name', 'is', 'john'])
-    my name is john
-    \"""
-"""
-
-few_shot_4 = [
-    {
-        "role": "user",
-        "content": f"Given the function definition:\n{example4}\nPlease provide the best implementation for it.",
-    },
-    {
-        "role": "assistant",
-        "content": """
-The challenge entails ensuring a match between characters within the list, while also inserting spaces in between.
-
-[CODE_START_TOK]
-def list2str(x : List[str]) -> str:
-    return ' '.join(x)
-
-print(list2str(['my name', 'is', 'john'])) # expect 'a b c'
-print(list2str(['a','b','c'])) # expect 'my name is john'
-[/CODE_END_TOK]
-[RESULT_TOK]
-a b c
-my name is john
-[/RESULT_TOK]
-
-The solution passed all the test cases, which means the function works as expected for the provided test cases.
-""",
-    },
-]
-
-from timeout_decorator import timeout
-
-wrong = 0
-
-
-@timeout(10, timeout_exception=TimeoutError)
+@timeout(100, timeout_exception=TimeoutError)
 def exec_with_timeout(import_str, full_test_code):
+    env = {**locals()}
+    code_to_exec = f"{import_str}\n{full_test_code}"
     try:
-        exec(f"{import_str}\n{full_test_code}")
+        exec(code_to_exec, env)
     except Exception as e:
-        print(f"Error : [{e}]")
+        print(f"Error Type: {type(e).__name__}, Error Message: {e}")
         return False  # Return False if there's an error during execution
     return True  # Return True if executed without errors
 
 
 if __name__ == "__main__":
     sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from code_interpreter.LlamaCodeInterpreter import LlamaCodeInterpreter
     import argparse
 
     parser = argparse.ArgumentParser(description="Process path for LLAMA2_FINETUNEED.")
@@ -292,6 +174,13 @@ if __name__ == "__main__":
         default='"./output/llama-2-7b-chat-ci"',
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        required=False,
+        help="Path to the finetuned LLAMA2 model.",
+        default='"./output/llama-2-7b-chat-ci"',
+    )
+    parser.add_argument(
         "--max-retry",
         type=int,
         required=False,
@@ -299,21 +188,26 @@ if __name__ == "__main__":
         default=5,  # You can set any default value you want here.
     )
     args = parser.parse_args()
-    LLAMA2_FINETUNEED_PATH = args.path
-    PROGRAMMING_PUZZLE_Q = False
-
-    interpreter = LlamaCodeInterpreter(
-        model_path=LLAMA2_FINETUNEED_PATH,
-        # load_in_4bit=True
-    )
+    PROGRAMMING_PUZZLE_Q = True
 
     problems = read_problems()
     correct_total = 0
     total_problems = len(problems)
 
     for idx, task_id in enumerate(problems):
+        if "gpt" not in args.model.lower():
+            LLAMA2_FINETUNEED_PATH = args.path
+            interpreter = LlamaCodeInterpreter(
+                model_path=LLAMA2_FINETUNEED_PATH,
+                # load_in_4bit=True
+            )
+        else:
+            interpreter = RetrospectiveGPTCodeInterpreter(
+                model=args.model,
+            )
+
         # dict_keys(['task_id', 'prompt', 'entry_point', 'canonical_solution', 'test'])
-        programming_puzzle = problems[task_id]["prompt"]
+        programming_puzzle = problems[task_id]["prompt"].replace("    ", "\t")
         text_only_problem = extract_text(programming_puzzle)
 
         interpreter.dialog = [
@@ -321,36 +215,40 @@ if __name__ == "__main__":
                 "role": "system",
                 "content": "You are helpful robot that can generate code , excute it and debug then answer",
             }
-        ]  # this will replaced in template conversion
-        # interpreter.dialog += few_shot_1
-        # interpreter.dialog += few_shot_2
-        # interpreter.dialog += few_shot_3
-        # interpreter.dialog += few_shot_4
+        ]
 
         if PROGRAMMING_PUZZLE_Q:
             # programming puzzle
             output_str = interpreter.chat(
-                user_message=f"Given the function definition:\n{programming_puzzle}\nPlease provide the best implementation for it.",
+                user_message=f"Write a Python script to solve the following problem:\n{programming_puzzle}\nEnsure the solution is verified by printing the expected output.",
                 MAX_TRY=args.max_retry,
-                VERBOSE=False,
+                VERBOSE=True,
+                code_exec_prefix=f"\nfrom typing import List,Tuple\nimport math\n",
+                feedback_prompt="Ensure the output matches the expected result, taking into account any corner cases. If discrepancies arise, pinpoint where you went wrong. Then, refine the code to achieve the desired outcome.",
+                append_result=True,
             )["content"]
 
         else:
             output_str = interpreter.chat(
-                user_message=f"Create a Python script for this problem:\n{text_only_problem}",
+                user_message=f"Write a Python script for this problem:\n{text_only_problem}",
                 MAX_TRY=args.max_retry,
-                VERBOSE=False,
+                VERBOSE=True,
+                code_exec_prefix=f"\nfrom typing import List,Tuple\nimport math\n",
+                feedback_prompt="Ensure the output matches the expected result. If not tell where you got wrong, then refine the code to achieve the desired outcome.",
+                append_result=True,
             )["content"]
 
         function_str = ""
-        code_block = extract_all_code_block(output_str)
+        if "gpt" not in args.model.lower():
+            code_block = extract_all_code_block(output_str)
+        else:
+            code_block = extract_all_code_block_gpt(output_str)
         if (code_block is not None) and ("def" in code_block):
-            if PROGRAMMING_PUZZLE_Q:
-                function_str = extract_function_from_code_block(code_block)
-            else:
-                function_str = code_block
+            function_str = code_block
 
-        function_name = get_function_name(function_str)
+        # function_name = get_last_outermost_function_name(function_str)
+        function_str = delete_print_asser(function_str)
+        function_name = get_last_outermost_function_name(function_str)
         full_test_code = f"{function_str}\n#-----------\n{problems[task_id]['test']}\ncheck({function_name})"
 
         # Print the full_test_code with syntax highlighting
@@ -375,10 +273,16 @@ if __name__ == "__main__":
             correct_total += 1
 
         acc = (correct_total) / (idx + 1)
+        # save dialog
+        interpreter.save_dialog(
+            path=f"./eval/gpt_humaneval_output/{task_id.replace('/','_')}_{is_correct}.json"
+        )
+        interpreter.close()
+        del interpreter
 
         # Constructing the output
         accuracy_text = Text(
-            f"Accuracy: {correct_total}/{idx+1}[{total_problems}] = {acc:.2%}",
+            f"Accuracy: {correct_total}/{idx+1}[{total_problems}] = {acc:.2%} [{is_correct}]",
             style="bold blue",
         )
         panel = Panel(accuracy_text, title="Results", border_style="green")

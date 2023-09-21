@@ -12,6 +12,9 @@ sys.path.append(prj_root_path)
 from code_interpreter.JuypyterClient import JupyterNotebook
 from code_interpreter.BaseCodeInterpreter import BaseCodeInterpreter
 from utils.const import *
+from prompt.gpt4_prompt import CODE_INTERPRETER_SYSTEM_PROMPT
+
+# from prompt.gpt4_prompt import CODE_INTERPRETER_SYSTEM_PROMPT
 from colorama import init, Fore, Style
 from rich.markdown import Markdown
 import base64
@@ -28,34 +31,44 @@ openai.api_key = OPENAI_API_KEY
 from utils.cleaner import clean_error_msg
 
 
-def save_dialog(dialog, base_path: str = f"{prj_root_path}/gpt_data_gen"):
-    file_number = 0
-    while True:
-        # Construct the path
-        file_name = f"{file_number}.json"
-        full_path = os.path.join(base_path, file_name)
+def remove_string(s):
+    pattern = r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}:.*LD_LIBRARY_PATH: /usr/local/nvidia/lib:/usr/local/nvidia/lib64\n"
+    return re.sub(pattern, "", s)
 
-        # Check if the file already exists
-        if not os.path.exists(full_path):
-            # If not, save the file
-            with open(full_path, "w") as f:
-                json.dump(dialog, f)
-            print(f"Dialog saved to {full_path}")
-            break
-        else:
-            # If the file does exist, increment the file number and try again
-            file_number += 1
+
+def clean_the_dialog(dialog, question):
+    question_idx = 0
+    for idx, item in enumerate(dialog):
+        if item["content"] == question:
+            question_idx = idx
+
+    filtered_dialog = dialog[question_idx:]
+
+    user_qinit_dict = filtered_dialog[0]
+    answer_fuse_str = "\n".join([i["content"].strip() for i in filtered_dialog[1::2]])
+
+    final_dialog_dict = [
+        {"role": "user", "content": user_qinit_dict["content"]},
+        {"role": "assistant", "content": answer_fuse_str},
+    ]
+
+    return final_dialog_dict
 
 
 class GPTCodeInterpreter(BaseCodeInterpreter):
     def __init__(self, model="gpt-4"):
         self.model = model
         self.dialog = [
-            {"role": "system", "content": CODE_INTERPRETER_SYSTEM_PROMPT},
+            # {"role": "system", "content":  CODE_INTERPRETER_SYSTEM_PROMPT },
+            {
+                "role": "system",
+                "content": CODE_INTERPRETER_SYSTEM_PROMPT,
+            },
             # {"role": "user", "content": "How can I use BeautifulSoup to scrape a website and extract all the URLs on a page?"},
             # {"role": "assistant", "content": "I think I need to use beatifulsoup to find current korean president,"}
         ]
 
+        # self.dialog += few_shot_4
         self.response = None
 
         assert os.path.isfile(
@@ -68,12 +81,12 @@ class GPTCodeInterpreter(BaseCodeInterpreter):
         openai.api_key = OPENAI_API_KEY
 
         self.nb = JupyterNotebook()
+        out = self.nb.add_and_run(TOOLS_CODE)  # tool import
 
     def get_response_content(self):
         if self.response:
             return self.response["choices"][0]["message"]["content"]
         else:
-            self.logger.warning("Response is empty.")
             return None
 
     @retry(
@@ -84,12 +97,31 @@ class GPTCodeInterpreter(BaseCodeInterpreter):
     def ChatCompletion(self):
         try:
             self.response = openai.ChatCompletion.create(
-                model=self.model, messages=self.dialog
+                model=self.model, messages=self.dialog, temperature=0.2, top_p=0.9
             )
         except Exception as e:
             print(f"error while OPENAI api call {e}")
 
-    def chat(self, user_message: str, VERBOSE: bool = False):
+    def close(self):
+        """
+        close jupyter notebook, and this class instance
+        """
+        self.nb.close()
+
+    def save_dialog(self, path: str = "./output/dialog.json"):
+        with open(path, "w") as f:
+            json.dump(self.dialog, f)
+            print(f" ++Dialog saved to [{path}]")
+
+    def chat(
+        self,
+        user_message: str,
+        VERBOSE: bool = False,
+        MAX_TRY: int = 6,
+        code_exec_prefix: str = "",
+        feedback_prompt: str = "",
+        append_result: bool = True,
+    ):
         self.dialog.append({"role": "user", "content": user_message})
 
         code_block_output = ""
@@ -101,15 +133,15 @@ class GPTCodeInterpreter(BaseCodeInterpreter):
                 "###User : " + Fore.BLUE + Style.BRIGHT + user_message + Style.RESET_ALL
             )
             print("\n###Assistant : ")
-        while True:
-            if attempt > 3:
-                break
 
+        for i in range(MAX_TRY):
+            # GPT response
             self.ChatCompletion()
 
+            # Get code block
             generated_text = self.get_response_content()
             generated_code_blocks = self.extract_code_blocks(generated_text)
-
+            # execute code
             if len(generated_code_blocks) > 0:
                 # Find the position of the first code block in the last answer
                 first_code_block_pos = (
@@ -140,71 +172,63 @@ class GPTCodeInterpreter(BaseCodeInterpreter):
                 if code_block_output is not None:
                     code_block_output = code_block_output.strip()
 
-                code_block_output_str = f"\n```RESULTS\n{code_block_output}\n```\n"
-                if VERBOSE:
-                    print(Fore.LIGHTBLACK_EX + code_block_output_str + Style.RESET_ALL)
-                    # markdown = Markdown(code_block_output_str)print(markdown)
-
-                gen_final = f"{text_before_first_code_block}{generated_code_blocks[0]}\n```{code_block_output_str}"
-
-                if self.dialog[-1]["role"] == "user":
-                    self.dialog.append({"role": "assistant", "content": gen_final})
-                elif self.dialog[-1]["role"] == "assistant":
-                    self.dialog[-1]["content"] += gen_final
-
-                if not error_flag:
-                    # attempt = max(attempt,2)
-                    break
-                    # return self.dialog[-1]
-            else:
-                if self.dialog[-1]["role"] == "user":
-                    self.dialog.append({"role": "assistant", "content": generated_text})
+                code_block_output = remove_string(code_block_output)
+                if len(code_block_output) > 500:
+                    code_block_output = (
+                        code_block_output[:200] + "⋯(skip)⋯" + code_block_output[-200:]
+                    )
+                code_block_output_str = f"\n```RESULT\n{code_block_output}\n```\n"
+                if append_result:
+                    gen_final = f"{text_before_first_code_block}{generated_code_blocks[0]}\n```{code_block_output_str}"
+                    if VERBOSE:
+                        print(
+                            Fore.LIGHTBLACK_EX + code_block_output_str + Style.RESET_ALL
+                        )
                 else:
-                    self.dialog[-1]["content"] += generated_text
-                # no code found break
+                    gen_final = (
+                        f"{text_before_first_code_block}{generated_code_blocks[0]}\n```"
+                    )
+
+                self.dialog.append(
+                    {
+                        "role": "assistant",
+                        "content": gen_final,
+                    }
+                )
+
+                if len(feedback_prompt) < 5:
+                    feedback_dict = {
+                        "role": "user",
+                        "content": "Keep going. if you think debugging tell me where you got wrong and better code.\nNeed conclusion to question only text (Do not leave result part alone).\nif doesn't need to generated anything then just say <done>",
+                    }
+                else:
+                    feedback_dict = {
+                        "role": "user",
+                        "content": f"{feedback_prompt}",
+                    }
+
+                self.dialog.append(feedback_dict)
+
+            else:
+                if "<done>" in generated_text:
+                    generated_text = generated_text.split("<done>")[0].strip()
+
+                if len(generated_text) <= 0:
+                    break
+
                 if VERBOSE:
                     print(Fore.GREEN + generated_text + Style.RESET_ALL)
+
+                self.dialog.append(
+                    {
+                        "role": "assistant",
+                        "content": f"{generated_text}",
+                    }
+                )
                 break
 
-            # early stop
-            if DEFAULT_EOS_TOKEN in self.dialog[-1]["content"]:
-                if img_data is not None:
-                    return (
-                        f"{self.dialog[-1]}\n![plot](data:image/png;base64,{img_data})"
-                    )
-                return self.dialog[-1]
+        self.dialog = [self.dialog[0]] + clean_the_dialog(
+            self.dialog, question=user_message
+        )  # delete retrospections after generation step
 
-            attempt += 1
-            # print(f"====Attempt[{attempt}]====\n{self.dialog[-1]['content']}")
-
-        # print(self.dialog)
-        if img_data is not None:
-            return f"{self.dialog[-1]}\n![plot](data:image/png;base64,{img_data})"
         return self.dialog[-1]
-
-
-if __name__ == "__main__":
-    import random
-
-    # output = interpreter.chat(user_message='How can I use BeautifulSoup to scrape a website and extract all the URLs on a page?',
-    #                          VERBOSE=True)
-    # $print('--OUT--')
-    # print(output['content'])
-    question = "I'm thinking of a number between 1 and 100. Write a program that tries to guess it based on my hints (higher/lower)."
-
-    interpreter = GPTCodeInterpreter()
-
-    output = interpreter.chat(user_message=question, VERBOSE=True)
-
-    print("=" * 10)
-    # print(interpreter.dialog)
-
-    # Save the dialog when 's' is pressed
-    while True:
-        input_char = input("Press 'q' to exit the dialog: ")
-        if input_char.lower() == "q":
-            save_dialog(interpreter.dialog)
-            break
-
-        else:
-            output = interpreter.chat(user_message=input_char, VERBOSE=True)

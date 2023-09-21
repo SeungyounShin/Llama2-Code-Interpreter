@@ -1,4 +1,5 @@
 from jupyter_client import KernelManager
+import threading
 import re
 
 
@@ -24,32 +25,51 @@ class JupyterNotebook:
         return "\n".join(outputs_only_str).strip()
 
     def add_and_run(self, code_string):
-        # Execute the code and get the execution count
-        msg_id = self.kc.execute(code_string)
+        # This inner function will be executed in a separate thread
+        def run_code_in_thread():
+            nonlocal outputs, error_flag
 
-        # Wait for and return the outputs
+            # Execute the code and get the execution count
+            msg_id = self.kc.execute(code_string)
+
+            while True:
+                try:
+                    msg = self.kc.get_iopub_msg(timeout=20)
+
+                    msg_type = msg["header"]["msg_type"]
+                    content = msg["content"]
+
+                    if msg_type == "execute_result":
+                        outputs.append(content["data"])
+                    elif msg_type == "stream":
+                        outputs.append(content["text"])
+                    elif msg_type == "error":
+                        error_flag = True
+                        outputs.append(content["traceback"])
+
+                    # If the execution state of the kernel is idle, it means the cell finished executing
+                    if msg_type == "status" and content["execution_state"] == "idle":
+                        break
+                except:
+                    break
+
         outputs = []
         error_flag = False
-        while True:
-            try:
-                msg = self.kc.get_iopub_msg(timeout=20)
 
-                msg_type = msg["header"]["msg_type"]
-                content = msg["content"]
+        # Start the thread to run the code
+        thread = threading.Thread(target=run_code_in_thread)
+        thread.start()
 
-                if msg_type == "execute_result":
-                    outputs.append(content["data"])
-                elif msg_type == "stream":
-                    outputs.append(content["text"])
-                elif msg_type == "error":
-                    error_flag = True
-                    outputs.append(content["traceback"])
+        # Wait for 10 seconds for the thread to finish
+        thread.join(timeout=10)
 
-                # If the execution state of the kernel is idle, it means the cell finished executing
-                if msg_type == "status" and content["execution_state"] == "idle":
-                    break
-            except:
-                break
+        # If the thread is still alive after 10 seconds, it's a timeout
+        if thread.is_alive():
+            outputs = ["Timeout after 10 seconds"]
+            error_flag = True
 
-        # print(outputs)
         return self.clean_output(outputs), error_flag
+
+    def close(self):
+        """Shutdown the kernel."""
+        self.km.shutdown_kernel()
