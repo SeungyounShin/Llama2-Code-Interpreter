@@ -18,7 +18,7 @@ from utils.const import *
 from prompt.gpt4_prompt import CODE_INTERPRETER_SYSTEM_PROMPT
 
 # from prompt.gpt4_prompt import CODE_INTERPRETER_SYSTEM_PROMPT
-from colorama import init, Fore, Style
+from colorama import init, Fore, Style, Back
 from rich.markdown import Markdown
 import base64
 
@@ -59,6 +59,11 @@ def clean_the_dialog(dialog, question):
     return final_dialog_dict
 
 
+@retry(
+    stop_max_attempt_number=7,
+    wait_exponential_multiplier=1000,
+    wait_exponential_max=10000,
+)
 def get_embedding(text, model="text-embedding-ada-002"):
     global counter
     headers = {
@@ -71,12 +76,7 @@ def get_embedding(text, model="text-embedding-ada-002"):
         "https://api.openai.com/v1/embeddings", headers=headers, json=payload
     )
 
-    if response.status_code == 429:  # Rate limit error
-        retry_after = int(response.headers.get("retry-after", 60))
-        print(f"Rate limited. Retrying in {retry_after} seconds...")
-        time.sleep(retry_after)
-        return get_embedding(text, model)
-    elif response.status_code != 200:
+    if response.status_code != 200:
         raise Exception(f"Request failed with status {response.status_code}")
 
     return np.array(response.json()["data"][0]["embedding"])
@@ -135,12 +135,12 @@ class QueryRetrospect:
         return [self.data[i]["retrospection"] for i in top_indices]
 
 
-class QueryRetrospectAgent:
+class QueryRetrospectPrefix:
     def __init__(
         self,
         model="gpt-4",
-        data_directory="./gpt_data_gen_retrospect/",
-        embeddings_path="./gpt_data_gen_retrospect/embeddings.npy",
+        data_directory="./eval/gpt_mbpp_output",
+        embeddings_path="./eval/gpt_mbpp_output/embeddings.npy",
     ):
         self.data_directory = data_directory
         self.embeddings_path = embeddings_path
@@ -171,62 +171,65 @@ class QueryRetrospectAgent:
                     os.path.join(data_directory, fname), "r", encoding="cp1252"
                 ) as f:
                     data_point = json.load(f)
+
+                    print(f'Processing "{data_point[1]["content"]}" ...')
                     self.data.append(data_point)
-                    self.embeddings.append(
-                        get_embedding(data_point["execution_result"])
-                    )
+                    self.embeddings.append(get_embedding(data_point[1]["content"]))
+
             self.embeddings = np.array(self.embeddings)
             self.save_embeddings()
             print(f"++ Embedding Saved! {self.embeddings.shape}")
 
         self.model = model
-        self.SYS = "You are RetrospectiveGPT"
         self.dialog = [
-            # {"role": "system", "content":  CODE_INTERPRETER_SYSTEM_PROMPT },
-            {"role": "system", "content": self.SYS},
-            # {"role": "user", "content": "How can I use BeautifulSoup to scrape a website and extract all the URLs on a page?"},
-            # {"role": "assistant", "content": "I think I need to use beatifulsoup to find current korean president,"}
+            {
+                "role": "system",
+                "content": "You are retrospection GPT. retrospect from the given data.",
+            },
+            {
+                "role": "user",
+                "content": 'Current Question:\n\nWrite a Python function to solve the following task:\n\nfrom typing import List\n\ndef cum_sum(numbers: List[int]) -> List[int]:\n    """\n    From a given list of integers, generate a list representing the cumulative sum of elements at each index.\n    >>> cum_sum([1, 2, 3, 4])\n    [1, 3, 6, 10]\n    """\n\nRetrieved Trajectories : \nIn a past interaction, a function named running_average was provided to calculate the running average of a list of numbers.\n\n```python\ndef running_average(numbers: List[int]) -> List[float]:\n    total = 0\n    averages = []\n    for i, num in enumerate(numbers):\n        total += num\n        averages.append(total / (i+1))\n    return averages\n\nprint(running_average([1,2,3,4])) # expected [1.0, 1.5, 2.0, 2.5]\n```\n```RESULT\n[1.0, 1.5, 2.0, 2.5]\n```\nThe output is expected. \n\n',
+            },
+            {
+                "role": "assistant",
+                "content": "From previous similar questions :\nThe `running_average` function highlights an important concept of maintaining a running or cumulative value (total) as one iterates over the list. This is directly applicable to the cum_sum problem.\n\nApplication to the Question:\nFor the cum_sum function, one needs to maintain a cumulative total of the elements as we traverse through the list. The running_average function is most closely related since it involves accumulating a total and storing intermediate results. By adapting this logic (i.e., excluding the division operation to compute the average), one can easily derive the cumulative sum solution.",
+            },
         ]
         self.response = ""
 
+    @retry(
+        stop_max_attempt_number=7,
+        wait_exponential_multiplier=1000,
+        wait_exponential_max=10000,
+    )
     def ChatCompletion(self):
         try:
             self.response = openai.ChatCompletion.create(
-                model=self.model, messages=self.dialog, temperature=0.1, top_p=1.0
+                model=self.model, messages=self.dialog, temperature=0.2, top_p=0.9
             )
         except Exception as e:
-            print(f"error while OPENAI api call {e}")
+            print(f"error while OPENAI api call {e} {self.response}")
 
     def save_embeddings(self):
         np.save(self.embeddings_path, self.embeddings)
 
-    def __call__(
-        self, query, top_k=3, current_context: str = "", VERBOSE: bool = False
-    ):
-        self.dialog = [
-            {"role": "system", "content": self.SYS},
-        ]
+    def __call__(self, query, top_k=3, VERBOSE: bool = False):
         query_embedding = get_embedding(query)
         similarities = np.dot(self.embeddings, query_embedding)
         top_indices = similarities.argsort()[-top_k:][::-1]
         top_i = top_indices[0]
-        retrospection_list = [self.data[i]["retrospection"] for i in top_indices]
+        prior_traj = self.data[top_i][-1]["content"]
 
-        retrospection_adaption_prompt = f"From prior experience\nYou first provide the code :\n{self.data[top_i]['first_round_code']}\
-            Result : \n{self.data[top_i]['execution_result']}\n\
-            So You tried agian to get : \n{self.data[top_i]['second_round_code']}\n\
-            Here is current error :\n{current_context}"
+        ask_dict = {
+            "role": "user",
+            "content": f"Current Question:\n\n{query}\n\nRetrieved Trajectories :\n{prior_traj}",
+        }
 
-        print(
-            f"From prior experience\nYou first provide the code :\n{self.data[top_i]['first_round_code']}\
-            Result : \n{self.data[top_i]['execution_result']}\n\
-            So You tried agian to get : \n{self.data[top_i]['second_round_code']}\n\
-            Here is current error :\n{current_context}"
-        )
-        self.dialog.append({"role": "user", "content": retrospection_adaption_prompt})
+        # print(f"From prior experience:\n{prior_traj}\n\nCurrent Question:\n{query}\n")
+        self.dialog.append(ask_dict)
         self.ChatCompletion()
 
-        return [self.response["choices"][0]["message"]["content"]]
+        return self.response["choices"][0]["message"]["content"]
 
 
 class RetrospectiveGPTCodeInterpreter(BaseCodeInterpreter):
@@ -258,7 +261,7 @@ class RetrospectiveGPTCodeInterpreter(BaseCodeInterpreter):
         out = self.nb.add_and_run(TOOLS_CODE)  # tool import
 
         # retrospections
-        self.retrospector = QueryRetrospect()
+        self.retrospector = QueryRetrospectPrefix()
 
     def get_response_content(self):
         if self.response:
@@ -300,7 +303,10 @@ class RetrospectiveGPTCodeInterpreter(BaseCodeInterpreter):
         append_result: bool = True,
         use_retrospect: bool = True,
     ):
-        self.dialog.append({"role": "user", "content": user_message})
+        prefix_retrospection = self.retrospector(query=user_message)
+        self.dialog.append(
+            {"role": "user", "content": f"{prefix_retrospection}\n\n{user_message}"}
+        )
         init_feedback = copy.deepcopy(feedback_prompt)
 
         code_block_output = ""
@@ -308,6 +314,14 @@ class RetrospectiveGPTCodeInterpreter(BaseCodeInterpreter):
         img_data = None
 
         if VERBOSE:
+            print(
+                "###Retrospection : "
+                + Fore.BLUE
+                + Back.WHITE
+                + Style.BRIGHT
+                + prefix_retrospection
+                + Style.RESET_ALL
+            )
             print(
                 "###User : " + Fore.BLUE + Style.BRIGHT + user_message + Style.RESET_ALL
             )
@@ -375,19 +389,9 @@ class RetrospectiveGPTCodeInterpreter(BaseCodeInterpreter):
                     }
                 )
 
-                if use_retrospect and error_flag:
-                    retrospection = self.retrospector(
-                        query=code_block_output,
-                        # current_context=f"{generated_code_blocks[0]}\n{code_block_output}",
-                    )[0]
-                    feedback_prompt = f"From previous similar error retrosepct\n{retrospection}\nImprove the code."
-                    if VERBOSE:
-                        print(Fore.MAGENTA + feedback_prompt + Style.RESET_ALL)
-                else:
-                    if len(init_feedback) > 1:
-                        feedback_prompt = f"{init_feedback}\nif you accomplish the instruction just say <done>\nIf not keep going."
-                        if VERBOSE:
-                            print(Fore.MAGENTA + feedback_prompt + Style.RESET_ALL)
+                feedback_prompt = f"{init_feedback}\nif you accomplish the instruction just say <done>\nIf not keep going."
+                if VERBOSE:
+                    print(Fore.MAGENTA + feedback_prompt + Style.RESET_ALL)
 
                 feedback_dict = {
                     "role": "user",
@@ -415,7 +419,7 @@ class RetrospectiveGPTCodeInterpreter(BaseCodeInterpreter):
                 break
 
         self.dialog = [self.dialog[0]] + clean_the_dialog(
-            self.dialog, question=user_message
+            self.dialog, question=f"{prefix_retrospection}\n\n{user_message}"
         )  # delete retrospections after generation step
 
         return self.dialog[-1]
@@ -430,7 +434,32 @@ if __name__ == "__main__":
 
     retro_interpreter = RetrospectiveGPTCodeInterpreter(model="gpt-4")
 
-    instruction = "Plot the MACD indicator in tesla.\n ref code : tqqq['MACD'], tqqq['MACD Signal'], _ = ta.trend.macd(tqqq['Close'])"
+    instruction = """
+Write a Python script to solve the following problem:
+
+def get_row(lst, x):
+	\"\"\"
+	You are given a 2 dimensional data, as a nested lists,
+	which is similar to matrix, however, unlike matrices,
+	each row may contain a different number of columns.
+	Given lst, and integer x, find integers x in the list,
+	and return list of tuples, [(x1, y1), (x2, y2) ...] such that
+	each tuple is a coordinate - (row, columns), starting with 0.
+	Sort coordinates initially by rows in ascending order.
+	Also, sort coordinates of the row by columns in descending order.
+	
+	Examples:
+	get_row([
+	  [1,2,3,4,5,6],
+	  [1,2,3,4,1,6],
+	  [1,2,3,4,5,1]
+	], 1) == [(0, 0), (1, 4), (1, 0), (2, 5), (2, 0)]
+	get_row([], 1) == []
+	get_row([[], [1], [1, 2, 3]], 3) == [(2, 2)]
+	\"\"\"
+
+Ensure the solution is verified by printing the expected output.
+"""
     # instruction = "Can you make a image of astraunaut in the garden?"
 
     # example
@@ -438,6 +467,6 @@ if __name__ == "__main__":
         user_message=instruction,
         MAX_TRY=5,
         use_retrospect=True,
-        feedback_prompt="Verfiy the result is expected.",
+        feedback_prompt="Ensure the output matches the expected result, taking into account any corner cases. If discrepancies arise, pinpoint where you went wrong. Then, refine the code to achieve the desired outcome.",
         VERBOSE=True,
     )
